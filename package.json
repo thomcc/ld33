@@ -1,0 +1,25 @@
+{
+  "name": "ld33",
+  "version": "1.0.0",
+  "description": "Ludum Dare 33",
+  "main": "src/Main.js",
+  "scripts": {
+    "start": "watchify -v -o out/Build.js -d src/Main.js",
+    "build": "browserify src/Main.js | uglifyjs -cm > out/Build.js"
+  },
+  "author": "Thom Chiovoloni",
+  "license": "proprietary",
+  "browserify": {
+    "transform": []
+  },
+  "dependencies": {
+    "bluebird": "^2.9.34",
+    "lodash": "^3.10.1"
+  },
+  "devDependencies": {
+    "browserify": "^10.2.4",
+    "uglify": "^0.1.5",
+    "uglify-js": "^2.4.23",
+    "watchify": "^3.2.3"
+  }
+}
