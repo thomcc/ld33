@@ -7,6 +7,9 @@ var Assets = {
 	sounds: {
 		ouch: new Howl({
 			src: ['res/ouch.wav']
+		}),
+		playerDie: new Howl({
+			src: ['res/player_die.wav']
 		})
 	},
 	music: new Howl({
@@ -16,6 +19,10 @@ var Assets = {
 		// 	intro: [0, 10000],
 		// 	main: [10000, 52104, true]
 		// }
+	}),
+	deathMusic: new Howl({
+		src: ['res/deathmusic.mp3', 'res/deathmusic.ogg'],
+		loop: true
 	})
 };
 
@@ -66,7 +73,9 @@ function loadImage(name, src) {
 Assets.loadAll = function() {
 	return Promise.all([
 		loadImage('level', 'res/lvl.png'),
-		loadImage('sprites', 'res/sprites.png')
+		loadImage('sprites', 'res/sprites.png'),
+		loadImage('eye', 'res/eye.png'),
+		loadImage('misc', 'res/misc.png')
 	]);
 }
 
