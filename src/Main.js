@@ -340,6 +340,14 @@ function lerp(a, b, t) {
 	return (1.0-t)*a + b*t;
 }
 
+function clamp(v, min, max) {
+	return v < min ? min : (v > max ? max : v);
+}
+
+function clamp01(v) {
+	return clamp(v, 0, 1);
+};
+
 function distBetween(x0, y0, x1, y1) {
 	var dx = x1 - x0;
 	var dy = y1 - y0;
@@ -945,6 +953,87 @@ PixelBuffer.prototype.putPixel = function(x, y, c) {
 	}
 };
 
+function Camera(game) {
+	this.game = game;
+	this.xBound = game.columns * TileSize;
+	this.yBound = game.rows * TileSize;
+	this.focus = this.game.player;
+	this.width = Engine.screenWidth / Engine.scale;
+	this.height = Engine.screenHeight / Engine.scale;
+	this.minX = 0;
+	this.maxX = 0;
+	this.minY = 0;
+	this.maxY = 0;
+
+	this.x = this.focus.x;
+	this.y = this.focus.y;
+}
+
+Camera.lookahead = 0.5;
+Camera.speed = 3.5;
+
+Camera.prototype.screenShake = function(amt) {
+	if (!amt) {
+		amt = 4;
+	}
+	var ox, oy;
+	do {
+		ox = Math.random() * 2 - 1;
+		oy = Math.random() * 2 - 1;
+	} while (ox*ox+oy*oy > 1);
+	ox *= amt;
+	oy *= amt;
+	this.setPosition(this.x+ox, this.y+oy);
+};
+
+Camera.prototype.update = function() {
+	var cx = this.x;
+	var cy = this.y;
+
+	var fx = this.focus.x;
+	var fy = this.focus.y;
+
+	var fvx = this.focus.vx;
+	var fvy = this.focus.vy;
+
+	var gx = fx + fvx * Camera.lookahead;
+	var gy = fy + fvy * Camera.lookahead;
+
+	if (Input.mouse.button.down) {
+		var mwx = Input.mouse.worldX;
+		var mwy = Input.mouse.worldY;
+
+		var frx = mwx - this.focus.x;
+		var fry = mwy - this.focus.y;
+
+		gx += frx / 2.0;
+		gy += fry / 2.0;
+	}
+	gx = clamp(gx, this.width/2, this.xBound-this.width/2);
+	gy = clamp(gy, this.height/2, this.yBound-this.height/2);
+
+	var nx = gx - cx;
+	var ny = gy - cy;
+
+	var relax = 1.0 - Math.exp(-Camera.speed*Engine.deltaTime);
+
+	nx = this.x + nx*relax;
+	ny = this.y + ny*relax;
+
+	this.setPosition(nx, ny);
+};
+
+Camera.prototype.setPosition = function(nx, ny) {
+	this.x = clamp(nx, this.width/2, this.xBound-this.width/2);
+	this.y = clamp(ny, this.height/2, this.yBound-this.height/2);
+	this.minX = this.x-this.width/2;
+	this.minY = this.y-this.height/2;
+	this.maxX = this.minX+this.width;
+	this.maxY = this.minY+this.height;
+};
+
+Engine.Camera = Camera;
+
 
 function Game() {
 	var tiles = Assets.images.level;
@@ -981,7 +1070,8 @@ function Game() {
 	this.tentacleBuffer = new PixelBuffer(vpwidth, vpheight);
 	this.effectBuffer = new PixelBuffer(vpwidth, vpheight);
 	this.effectBuffer.trackBounds = false;
-
+	this.camera = new Camera(this);
+	// this.viewport = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 	/*
 	this.tentacleLayer = document.createElement('canvas');
 	var ctx = this.tentacleLayerContext = this.tentacleLayer.getContext('2d')
@@ -1032,6 +1122,7 @@ Game.prototype.update = function() {
 		var dy = this.player.y - y;
 		this.addEntity(new Bullet(this, {x: x, y: y}, dx, dy));
 	}
+	this.camera.update();
 };
 
 Game.prototype.isBlocked = function(x, y) {
@@ -1051,12 +1142,39 @@ Game.prototype.addEntity = function(e) {
 	this.entities.push(e);
 };
 
+
+
 Game.prototype.render = function(ctx, canvas) {
+	/*
 	var minX = this.player.x - canvas.width/2;
 	var minY = this.player.y - canvas.height/2;
 
-	var maxX = this.player.x + canvas.width/2;
-	var maxY = this.player.y + canvas.height/2;
+	if (minX < 0) {
+		minX = 0;
+	}
+	if (minY < 0) {
+		minY = 0
+	}
+	if (minX + canvas.width >= this.columns * TileSize) {
+		minX = this.columns*TileSize - canvas.width;
+	}
+	if (minY + canvas.height >= this.rows * TileSize) {
+		minY = this.rows * TileSize - canvas.height;
+	}*/
+
+	//var maxX = minX + canvas.width;
+	//var maxY = minY + canvas.height;
+
+	// this.viewport.minX = minX;
+	// this.viewport.maxX = maxX;
+	// this.viewport.minY = minY;
+	// this.viewport.maxY = maxY;
+
+	var minX = this.camera.minX;
+	var maxX = this.camera.maxX;
+	var minY = this.camera.minY;
+	var maxY = this.camera.maxY;
+
 
 	Input.setBounds(minX, minY);
 
@@ -1513,13 +1631,14 @@ Engine.gameOver = function() {
 		Assets.music.stop();
 		Assets.deathMusic.play();
 		Assets.deathMusic.fade(0.0, 1.0, 1.0);
-	})
+	});
 }
 
 Engine.update = function() {
 	Engine.emit('update');
-
-	Engine.game.update();
+	if (!Engine.isOver) {
+		Engine.game.update();
+	}
 
 	/*
 
