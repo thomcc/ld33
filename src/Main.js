@@ -12,35 +12,35 @@ if (!console.warn) {
 var EventEmitter = require('events').EventEmitter;
 var Assets = require('./Assets');
 
-var Game = Object.assign({}, EventEmitter.prototype);
+var Engine = Object.assign({}, EventEmitter.prototype);
 
-window.Game = Game;
+window.Engine = Engine;
 
 
-Game.screenWidth = 900;
-Game.screenHeight = 540;
-Game.FPS = 60.0;
-Game.DEBUG = window.DEBUG = true;
+Engine.screenWidth = 900;
+Engine.screenHeight = 540;
+Engine.FPS = 60.0;
+Engine.DEBUG = window.DEBUG = true;
 
-Game.deltaTime = 1.0 / Game.FPS;
-Game.realDeltaTime = Game.deltaTime;
+Engine.deltaTime = 1.0 / Engine.FPS;
+Engine.realDeltaTime = Engine.deltaTime;
 
-Game.time = 0;
-Game.accumulatedTime = 0;
+Engine.time = 0;
+Engine.accumulatedTime = 0;
 
-Game.screen = null;
+Engine.screen = null;
 
-Game.didLose = false
-Game.isOver = false;
+Engine.didLose = false
+Engine.isOver = false;
 
-Game.paused = false;
+Engine.paused = false;
 
-Game.devicePixels = (window.devicePixelRatio || window.webkitDevicePixelRatio || 1.0);
+Engine.devicePixels = (window.devicePixelRatio || window.webkitDevicePixelRatio || 1.0);
 
-Game.drawCanvas = null;
-Game.scale = 4;
+Engine.drawCanvas = null;
+Engine.scale = 4;
 
-Game.now = (function() {
+Engine.now = (function() {
 	if (window.performance && window.performance.now) {
 		return window.performance.now.bind(window.performance);
 	}
@@ -50,7 +50,7 @@ Game.now = (function() {
 }());
 
 function Assert(v, msg) {
-	if (!Game.DEBUG) {
+	if (!Engine.DEBUG) {
 		return;
 	}
 	if (msg == null) {
@@ -66,13 +66,13 @@ function Assert(v, msg) {
 
 
 function NaNCheck(v) {
-	if (!Game.DEBUG) {
+	if (!Engine.DEBUG) {
 		return;
 	}
 	Assert(+v === v, "NaNCheck failed");
 }
 
-Game.MainLoop = (function() {
+Engine.MainLoop = (function() {
 	var lastUpdate = 0;
 	var frames = 0;
 	var ticks = 0;
@@ -84,57 +84,57 @@ Game.MainLoop = (function() {
 	var mspfElem = null;
 
 	function MainLoop(timeStamp) {
-		if (Game.paused) {
+		if (Engine.paused) {
 			return;
 		}
 		if (!lastUpdate) {
 			lastUpdate = timeStamp;
 			lastSecond = timeStamp;
-			requestAnimationFrame(Game.MainLoop);
+			requestAnimationFrame(Engine.MainLoop);
 			return;
 		}
 
-		var frameStart = Game.now();
+		var frameStart = Engine.now();
 
-		Game.time = timeStamp / 1000.0;
+		Engine.time = timeStamp / 1000.0;
 		var dt = (timeStamp - lastUpdate) / 1000.0;
 		lastUpdate = timeStamp;
 		if (dt > 1.0) {
 			console.log("Reload from debugger (or whatever)");
-			dt = 1.0 / Game.FPS;
+			dt = 1.0 / Engine.FPS;
 		}
 
-		Game.deltaTime = 1.0 / Game.FPS;
-		Game.realDeltaTime = dt;
+		Engine.deltaTime = 1.0 / Engine.FPS;
+		Engine.realDeltaTime = dt;
 
 		accum += dt;
 		var didUpdate = false;
-		while (accum >= Game.deltaTime) {
+		while (accum >= Engine.deltaTime) {
 			++ticks;
-			Game.update();
-			Game.Input.update();
-			accum -= Game.deltaTime;
+			Engine.update();
+			Engine.Input.update();
+			accum -= Engine.deltaTime;
 			didUpdate = true;
-			Game.accumulatedTime += Game.deltaTime;
+			Engine.accumulatedTime += Engine.deltaTime;
 		}
 
-		requestAnimationFrame(Game.MainLoop);
+		requestAnimationFrame(Engine.MainLoop);
 		didUpdate = true;
 		if (didUpdate) {
 			++frames;
-			Game.render();
+			Engine.render();
 		}
 
-		var frameEnd = Game.now();
+		var frameEnd = Engine.now();
 
-		if (Game.DEBUG && mspfElem != null) {
+		if (Engine.DEBUG && mspfElem != null) {
 			mspfElem.textContent = 'mspf: '+(frameEnd-frameStart).toFixed(2);
 		}
 
 		if ((timeStamp - lastSecond) >= 1000.0) {
 			console.log("fps: "+frames);
 			console.log("tps: "+ticks);
-			if (Game.DEBUG) {
+			if (Engine.DEBUG) {
 				if (tpsElem != null) {
 					tpsElem.textContent = "tps: "+ticks;
 				}
@@ -164,7 +164,7 @@ Game.MainLoop = (function() {
 	return MainLoop;
 }());
 
-var Input = Game.Input = (function() {
+var Input = Engine.Input = (function() {
 
 	function Key() {
 		this.down = false;
@@ -240,11 +240,11 @@ var Input = Game.Input = (function() {
 				var rect = canvas.getBoundingClientRect();
 				lx -= rect.left;
 				ly -= rect.top;
-				var cx = Input.mouse.cx = lx / Game.devicePixels;
-				var cy = Input.mouse.cy = ly / Game.devicePixels;
+				var cx = Input.mouse.cx = lx / Engine.devicePixels;
+				var cy = Input.mouse.cy = ly / Engine.devicePixels;
 
-				Input.mouse.x = lx / Game.scale;
-				Input.mouse.y = ly / Game.scale;
+				Input.mouse.x = lx / Engine.scale;
+				Input.mouse.y = ly / Engine.scale;
 			}
 
 			function onKey(e, state) {
@@ -260,7 +260,7 @@ var Input = Game.Input = (function() {
 						Assets.music.mute();
 					case 27: // escape (pause)
 						e.preventDefault();
-						Game.togglePause();
+						Engine.togglePause();
 						break;
 					}
 				}
@@ -292,8 +292,8 @@ var Input = Game.Input = (function() {
 				e.preventDefault();
 				Input.mouse.button.set(true);
 				updateMousePos(e.clientX, e.clientY);
-				if (Game.paused) {
-					Game.unpause();
+				if (Engine.paused) {
+					Engine.unpause();
 				}
 			});
 
@@ -314,25 +314,25 @@ var Input = Game.Input = (function() {
 	return Input;
 }());
 
-Game.Mouse = Game.Input.mouse;
-Game.Keys = Game.Input.keys;
+Engine.Mouse = Engine.Input.mouse;
+Engine.Keys = Engine.Input.keys;
 
-Game.togglePause = function() {
-	if (!Game.paused) {
-		Game.paused = true;
+Engine.togglePause = function() {
+	if (!Engine.paused) {
+		Engine.paused = true;
 		Assets.music.pause();
 	}
 	else {
-		Game.paused = false;
+		Engine.paused = false;
 		Assets.music.play();//('main');
-		Game.MainLoop.start();
+		Engine.MainLoop.start();
 	}
 };
 
-Game.unpause = function() {
-	if (Game.paused) {
-		Game.paused = false;
-		Game.MainLoop.start();
+Engine.unpause = function() {
+	if (Engine.paused) {
+		Engine.paused = false;
+		Engine.MainLoop.start();
 	}
 };
 
@@ -437,8 +437,8 @@ Tentacle.prototype.update = function(x, y) {
 	var mouseDeltaX = mx - this.parent.x;
 	var mouseDeltaY = my - this.parent.y;
 	if (Input.mouse.button.down) {
-		mouseDeltaX /= Game.screenWidth/Game.scale;
-		mouseDeltaY /= Game.screenHeight/Game.scale;
+		mouseDeltaX /= Engine.screenWidth/Engine.scale;
+		mouseDeltaY /= Engine.screenHeight/Engine.scale;
 		mouseDeltaX *= 2;
 		mouseDeltaY *= 2;
 	}
@@ -514,16 +514,16 @@ Tentacle.prototype.drawPath = function(ctx, sx, sy) {
 	}
 };
 
-Tentacle.prototype.gibify = function(level) {
+Tentacle.prototype.gibify = function(game) {
 	var stride = (Math.floor(this.numPoints / 5))*SEG_SIZE;
 	for (var i = 0; i < this.data.length; i += stride) {
-		if (level.isBlocked(this.data[i+SEG_X], this.data[i+SEG_Y])) {
+		if (game.isBlocked(this.data[i+SEG_X], this.data[i+SEG_Y])) {
 			continue;
 		}
-		var gib = new Gib(level, this.data[i+SEG_X], this.data[i+SEG_Y], true);
+		var gib = new Gib(game, this.data[i+SEG_X], this.data[i+SEG_Y], true);
 		gib.vx += this.data[i+SEG_VX]/2.0;
 		gib.vy += this.data[i+SEG_VY]/2.0;
-		level.addEffect(gib);
+		game.addEffect(gib);
 	}
 };
 
@@ -575,7 +575,7 @@ Tentacle.prototype.drawOnPixels = function(pixels, sx, sy, color) {
 
 };
 
-function Monster(level) {
+function Monster(game) {
 	this.vx = 0;
 	this.vy = 0;
 
@@ -592,7 +592,7 @@ function Monster(level) {
 	this.sprites = Assets.images.sprites;
 	this.tentacles = [];
 	this.setSize(2);
-	this.level = level;
+	this.game = game;
 	this.invincibleTimer = 0;
 }
 
@@ -679,10 +679,10 @@ Monster.prototype.die = function() {
 	for (var i = 0; i < 30; ++i) {
 		var ox = Math.random() * this.width - this.width/2;
 		var oy = Math.random() * this.height - this.height / 2;
-		this.level.addEffect(new Gib(this.level, this.x+ox, this.y+oy, true));
+		this.game.addEffect(new Gib(this.game, this.x+ox, this.y+oy, true));
 	}
 	for (var i = 0; i < this.tentacles.length; ++i) {
-		this.tentacles[i].gibify(this.level);
+		this.tentacles[i].gibify(this.game);
 	}
 };
 
@@ -717,7 +717,7 @@ Monster.prototype.update = function() {
 		--this.deathTimer;
 		if (this.deathTimer === 0) {
 			if (this.size === 0) {
-				Game.gameOver();
+				Engine.gameOver();
 			}
 			else {
 				this.setSize(this.size-1);
@@ -785,11 +785,11 @@ Monster.prototype.move = function() {
 	var oldVx = this.vx;
 	var oldVy = this.vy;
 
-	var newX = this.x + this.vx*Game.deltaTime + ddx * Game.deltaTime * Game.deltaTime * 0.5;
-	var newY = this.y + this.vy*Game.deltaTime + ddy * Game.deltaTime * Game.deltaTime * 0.5;
+	var newX = this.x + this.vx*Engine.deltaTime + ddx * Engine.deltaTime * Engine.deltaTime * 0.5;
+	var newY = this.y + this.vy*Engine.deltaTime + ddy * Engine.deltaTime * Engine.deltaTime * 0.5;
 
-	var newVx = this.vx + ddx*Game.deltaTime;
-	var newVy = this.vy + ddy*Game.deltaTime;
+	var newVx = this.vx + ddx*Engine.deltaTime;
+	var newVy = this.vy + ddy*Engine.deltaTime;
 
 	var hitSide = false;
 
@@ -809,9 +809,9 @@ Monster.prototype.move = function() {
 				// xLeft -= dmx;
 			}
 			else {
-				// var forceX = -this.vx/Game.deltaTime * 4;
-				// this.x += forceX*Game.deltaTime*Game.deltaTime/2;
-				// this.vx += forceX*Game.deltaTime;
+				// var forceX = -this.vx/Engine.deltaTime * 4;
+				// this.x += forceX*Engine.deltaTime*Engine.deltaTime/2;
+				// this.vx += forceX*Engine.deltaTime;
 
 				this.vx = -moveSx*Math.abs(this.vx);
 				// this.vx = 0;
@@ -884,11 +884,11 @@ Monster.prototype.canMove = function(dx, dy) {
 	var newTop = Math.floor(top+dy);
 	var newBottom = Math.floor(bottom+dy);
 
-	if (this.level.isBlocked(newLeft, newTop)) return false;
-	if (this.level.isBlocked(newLeft, newBottom)) return false;
+	if (this.game.isBlocked(newLeft, newTop)) return false;
+	if (this.game.isBlocked(newLeft, newBottom)) return false;
 
-	if (this.level.isBlocked(newRight, newTop)) return false;
-	if (this.level.isBlocked(newRight, newBottom)) return false;
+	if (this.game.isBlocked(newRight, newTop)) return false;
+	if (this.game.isBlocked(newRight, newBottom)) return false;
 
 	return true;
 
@@ -904,7 +904,7 @@ Monster.prototype.spriteY = function() {
 	return sizeData.sprites.y;
 };
 
-Game.Monster = Monster;
+Engine.Monster = Monster;
 
 function PixelBuffer(w, h) {
 	this.width = w;
@@ -946,7 +946,7 @@ PixelBuffer.prototype.putPixel = function(x, y, c) {
 };
 
 
-function Level() {
+function Game() {
 	var tiles = Assets.images.level;
 	var pixelData = tiles.getPixelData();
 	this.columns = pixelData.width;
@@ -976,8 +976,8 @@ function Level() {
 	}
 
 	// @TODO: this belongs in a separate renderer
-	var vpwidth = Game.screenWidth / Game.scale;
-	var vpheight = Game.screenHeight / Game.scale;
+	var vpwidth = Engine.screenWidth / Engine.scale;
+	var vpheight = Engine.screenHeight / Engine.scale;
 	this.tentacleBuffer = new PixelBuffer(vpwidth, vpheight);
 	this.effectBuffer = new PixelBuffer(vpwidth, vpheight);
 	this.effectBuffer.trackBounds = false;
@@ -986,8 +986,8 @@ function Level() {
 	this.tentacleLayer = document.createElement('canvas');
 	var ctx = this.tentacleLayerContext = this.tentacleLayer.getContext('2d')
 
-	this.tentacleLayer.width = Game.screenWidth / Game.scale;
-	this.tentacleLayer.height = Game.screenHeight / Game.scale;
+	this.tentacleLayer.width = Engine.screenWidth / Engine.scale;
+	this.tentacleLayer.height = Engine.screenHeight / Engine.scale;
 	var tentaclePixels = ctx.createImageData(this.tentacleLayer.width, this.tentacleLayer.height);
 
 	this.tentaclePixels = {
@@ -1000,13 +1000,13 @@ function Level() {
 	};*/
 };
 
-Game.Level = Level;
+Engine.Game = Game;
 
-Level.prototype.addEffect = function(e) {
+Game.prototype.addEffect = function(e) {
 	this.effects.push(e);
 };
 
-Level.prototype.updateArray = function(arr) {
+Game.prototype.updateArray = function(arr) {
 	for (var i = 0; i < arr.length; ++i) {
 		arr[i].update();
 	}
@@ -1020,7 +1020,7 @@ Level.prototype.updateArray = function(arr) {
 	arr.length = j;
 };
 
-Level.prototype.update = function() {
+Game.prototype.update = function() {
 	this.player.update();
 
 	this.updateArray(this.effects);
@@ -1034,24 +1034,24 @@ Level.prototype.update = function() {
 	}
 };
 
-Level.prototype.isBlocked = function(x, y) {
+Game.prototype.isBlocked = function(x, y) {
 	x = Math.round(x/TileSize-0.5);
 	y = Math.round(y/TileSize-0.5);
 	return this.getTile(x|0, y|0) !== 0;
 };
 
-Level.prototype.getTile = function(x, y) {
+Game.prototype.getTile = function(x, y) {
 	if (y < 0 || y >= this.rows || x < 0 || x >= this.columns) {
 		return -1;
 	}
 	return this.tiles[x+y*this.columns];
 };
 
-Level.prototype.addEntity = function(e) {
+Game.prototype.addEntity = function(e) {
 	this.entities.push(e);
 };
 
-Level.prototype.render = function(ctx, canvas) {
+Game.prototype.render = function(ctx, canvas) {
 	var minX = this.player.x - canvas.width/2;
 	var minY = this.player.y - canvas.height/2;
 
@@ -1219,7 +1219,7 @@ Level.prototype.render = function(ctx, canvas) {
 
 var Movable = {};
 
-Game.Movable = Movable;
+Engine.Movable = Movable;
 
 Movable.doMove = function() {
 	var s = Math.ceil(Math.sqrt(this.vx*this.vx+this.vy*this.vy));
@@ -1235,10 +1235,10 @@ Movable._move = function(dx, dy) {
 	}
 	var nx = this.x+dx;
 	var ny = this.y+dy;
-	if (this.level.isBlocked(nx-this.r, ny-this.r) ||
-		this.level.isBlocked(nx-this.r, ny+this.r) ||
-		this.level.isBlocked(nx+this.r, ny-this.r) ||
-		this.level.isBlocked(nx+this.r, ny+this.r)) {
+	if (this.game.isBlocked(nx-this.r, ny-this.r) ||
+		this.game.isBlocked(nx-this.r, ny+this.r) ||
+		this.game.isBlocked(nx+this.r, ny-this.r) ||
+		this.game.isBlocked(nx+this.r, ny+this.r)) {
 		this.collide(dx, dy);
 	}
 	else {
@@ -1258,8 +1258,8 @@ function mixin(type, mixin) {
 
 
 // @TODO: need to optimize: game chokes when a lot of blood/gibs are on screen
-function Particle(level, x, y) {
-	this.level = level;
+function Particle(game, x, y) {
+	this.game = game;
 	this.active = true;
 
 	this.x = x;
@@ -1289,7 +1289,7 @@ function Particle(level, x, y) {
 	this.sprite = -1;
 }
 
-Game.Particle = Particle;
+Engine.Particle = Particle;
 
 mixin(Particle, Movable);
 
@@ -1335,8 +1335,8 @@ Particle.prototype.render = function(c, sx, sy) {
 };
 
 
-function Blood(level, x, y) {
-	Particle.call(this, level, x, y);
+function Blood(game, x, y) {
+	Particle.call(this, game, x, y);
 	this.r = 0.5;
 	// this.color = '#a00000';
 	this.sprite = -1;
@@ -1352,7 +1352,7 @@ Blood.prototype.constructor = Blood;
 	// return 'rgb(160, 0, 0)';
 // };
 
-Game.Blood = Blood;
+Engine.Blood = Blood;
 
 Blood.prototype.render = function(c, sx, sy, pix) {
 	var px = Math.round(this.x - sx);
@@ -1360,29 +1360,29 @@ Blood.prototype.render = function(c, sx, sy, pix) {
 	pix.putPixel(px, py, 0xff0000a0);
 }
 
-function Gib(level, x, y, isMonstrous) {
-	Particle.call(this, level, x, y);
+function Gib(game, x, y, isMonstrous) {
+	Particle.call(this, game, x, y);
 	this.sprite = isMonstrous ? 1 : 0;
 }
 
 Gib.prototype = Object.create(Particle.prototype);
 Gib.prototype.constructor = Gib;
 
-Game.Gib = Gib;
+Engine.Gib = Gib;
 
 Gib.prototype.update = function() {
 	Particle.prototype.update.call(this);
-	var blood = new Blood(this.level, this.x, this.y);
+	var blood = new Blood(this.game, this.x, this.y);
 	blood.vx /= 20;
 	blood.vy /= 20;
 	blood.vx += this.vx / 2;
 	blood.vy += this.vy / 2;
-	this.level.addEffect(blood);
+	this.game.addEffect(blood);
 };
 
 
-function Entity(level) {
-	this.level = level;
+function Entity(game) {
+	this.game = game;
 	this.active = true;
 
 	this.x = 0;
@@ -1396,7 +1396,7 @@ function Entity(level) {
 
 mixin(Entity, Movable);
 
-Game.Entity = Entity;
+Engine.Entity = Entity;
 
 Entity.prototype.update = function() {}
 Entity.prototype.render = function(c, mx, my) {};
@@ -1406,8 +1406,8 @@ Entity.prototype.setPosition = function(x, y) {
 	this.x = x;
 };
 
-function Bullet(level, shooter, dx, dy, speed) {
-	Entity.call(this, level);
+function Bullet(game, shooter, dx, dy, speed) {
+	Entity.call(this, game);
 	if (speed == null) {
 		speed = 4;
 	}
@@ -1450,7 +1450,7 @@ Bullet.prototype.update = function() {
 };
 
 Bullet.prototype.collidesWithPlayer = function() {
-	var player = this.level.player;
+	var player = this.game.player;
 	var pLeft = player.x - player.width/2;
 	var pRight = player.x + player.width/2;
 	var pTop = player.y - player.height/2;
@@ -1468,12 +1468,12 @@ Bullet.prototype.collidesWithPlayer = function() {
 
 Bullet.prototype.onPlayerCollision = function() {
 	this.active = false;
-	var p = this.level.player;
+	var p = this.game.player;
 	p.hurtFor(this.damage);
-	var gib = new Gib(this.level, this.x, this.y, true);
+	var gib = new Gib(this.game, this.x, this.y, true);
 	gib.vx += this.vx;
 	gib.vy += this.vy;
-	this.level.addEffect(gib);
+	this.game.addEffect(gib);
 };
 
 Bullet.prototype.collide = function() {
@@ -1503,17 +1503,11 @@ Bullet.prototype.render = function(c, sx, sy, pix) {
 	}
 };
 
-
-
-
-
-
-
-Game.loseTime = 0;
-Game.gameOver = function() {
-	Game.loseTime = Game.now();
-	Game.didLose = true;
-	Game.isOver = true;
+Engine.loseTime = 0;
+Engine.gameOver = function() {
+	Engine.loseTime = Engine.now();
+	Engine.didLose = true;
+	Engine.isOver = true;
 	Assets.music.fade(1.0, 0.0, 2.0);
 	Assets.music.once('faded', function() {
 		Assets.music.stop();
@@ -1522,22 +1516,19 @@ Game.gameOver = function() {
 	})
 }
 
+Engine.update = function() {
+	Engine.emit('update');
 
-
-
-Game.update = function() {
-	Game.emit('update');
-
-	Game.level.update();
+	Engine.game.update();
 
 	/*
 
-	var ctx = Game.drawCanvas.getContext('2d');
+	var ctx = Engine.drawCanvas.getContext('2d');
 	ctx.imageSmoothingEnabled = false;
 	ctx.mozImageSmoothingEnabled = false;
 	ctx.webkitImageSmoothingEnabled = false;
 	ctx.fillStyle = 'white';
-	ctx.fillRect(0, 0, Game.drawCanvas.width, Game.drawCanvas.height);
+	ctx.fillRect(0, 0, Engine.drawCanvas.width, Engine.drawCanvas.height);
 
 	var mx = Input.mouse.x;
 	var my = Input.mouse.y;
@@ -1550,27 +1541,27 @@ Game.update = function() {
 	ctx.fillRect(Math.floor(mx-10), Math.floor(my-10), 20, 20);*/
 };
 
-Game.render = function() {
-	Game.emit('render');
-	var drawCtx = Game.drawCanvas.getContext('2d');
+Engine.render = function() {
+	Engine.emit('render');
+	var drawCtx = Engine.drawCanvas.getContext('2d');
 	drawCtx.imageSmoothingEnabled = false;
 	drawCtx.mozImageSmoothingEnabled = false;
 	drawCtx.webkitImageSmoothingEnabled = false;
-	var screenCtx = Game.screen.getContext('2d');
+	var screenCtx = Engine.screen.getContext('2d');
 	screenCtx.imageSmoothingEnabled = false;
 	screenCtx.mozImageSmoothingEnabled = false;
 	screenCtx.webkitImageSmoothingEnabled = false;
-	screenCtx.clearRect(0, 0, Game.screen.width, Game.screen.height);
+	screenCtx.clearRect(0, 0, Engine.screen.width, Engine.screen.height);
 
-	if (!Game.isOver) {
+	if (!Engine.isOver) {
 
-		Game.level.render(drawCtx, Game.drawCanvas);
+		Engine.game.render(drawCtx, Engine.drawCanvas);
 
 		// health bar
 		drawCtx.drawImage(Assets.images.misc.image, 0, 0, 64, 8, 0, 0, 64, 8);
 
 		drawCtx.fillStyle = '#ff0000';
-		var playerHp = Game.level.player.hp / Game.level.player.maxHp;
+		var playerHp = Engine.game.player.hp / Engine.game.player.maxHp;
 
 		playerHp = Math.min(1, Math.max(0, playerHp));
 		playerHp *= 37;
@@ -1580,58 +1571,58 @@ Game.render = function() {
 
 		drawCtx.drawImage(
 			Assets.images.misc.image,
-			Game.level.player.size*8, 48, 8, 8,
+			Engine.game.player.size*8, 48, 8, 8,
 			61, 0, 8, 8);
 
-		screenCtx.drawImage(Game.drawCanvas, 0, 0, Game.drawCanvas.width, Game.drawCanvas.height, 0, 0, Game.screen.width, Game.screen.height);
+		screenCtx.drawImage(Engine.drawCanvas, 0, 0, Engine.drawCanvas.width, Engine.drawCanvas.height, 0, 0, Engine.screen.width, Engine.screen.height);
 
 	}
 	else {
-		var opacity = Math.min(1.0, (Game.now() - Game.loseTime)/2000);
+		var opacity = Math.min(1.0, (Engine.now() - Engine.loseTime)/2000);
 		screenCtx.fillStyle = 'rgba(0, 0, 0, '+opacity+')';
-		screenCtx.fillRect(0, 0, Game.screen.width, Game.screen.height);
+		screenCtx.fillRect(0, 0, Engine.screen.width, Engine.screen.height);
 
 		screenCtx.font = '100px Source Sans Pro';
 		screenCtx.textAlign = 'center';
 		screenCtx.textBaseline = 'middle';
 
 		screenCtx.fillStyle = 'rgba(255, 255, 255, '+opacity+')';
-		if (Game.didLose) {
-			screenCtx.fillText("You were not a very good monster", Game.screen.width/2, Game.screen.height/4);
-			screenCtx.fillText("Refresh to try again", Game.screen.width/2, Game.screen.height*3/4)
+		if (Engine.didLose) {
+			screenCtx.fillText("You were not a very good monster", Engine.screen.width/2, Engine.screen.height/4);
+			screenCtx.fillText("Refresh to try again", Engine.screen.width/2, Engine.screen.height*3/4)
 
 		} else {
-			screenCtx.fillText("You were the monster", Game.screen.width/2, Game.screen.height/4);
-			screenCtx.fillText("Refresh to play again", Game.screen.width/2, Game.screen.height*3/4)
+			screenCtx.fillText("You were the monster", Engine.screen.width/2, Engine.screen.height/4);
+			screenCtx.fillText("Refresh to play again", Engine.screen.width/2, Engine.screen.height*3/4)
 		}
 	}
 
 };
 
 
-Game.init = function(canvas) {
-	Game.screen = canvas;
-	canvas.width = Game.screenWidth*Game.devicePixels;
-	canvas.height = Game.screenHeight*Game.devicePixels;
-	canvas.style.width = Game.screenWidth+"px";
-	canvas.style.height = Game.screenHeight+"px";
+Engine.init = function(canvas) {
+	Engine.screen = canvas;
+	canvas.width = Engine.screenWidth*Engine.devicePixels;
+	canvas.height = Engine.screenHeight*Engine.devicePixels;
+	canvas.style.width = Engine.screenWidth+"px";
+	canvas.style.height = Engine.screenHeight+"px";
 
-	Game.Input.init(canvas);
+	Engine.Input.init(canvas);
 
 	var drawCanvas = document.createElement('canvas');
 
-	drawCanvas.width = Game.screenWidth / Game.scale;
-	drawCanvas.height = Game.screenHeight / Game.scale;
-	Game.drawCanvas = drawCanvas;
+	drawCanvas.width = Engine.screenWidth / Engine.scale;
+	drawCanvas.height = Engine.screenHeight / Engine.scale;
+	Engine.drawCanvas = drawCanvas;
 
 	var drawCtx = drawCanvas.getContext('2d');
 
 
 	// var drawCtx = drawCanvas.getContext('2d');
 
-	var scrCtx = Game.screen.getContext('2d');
+	var scrCtx = Engine.screen.getContext('2d');
 	scrCtx.fillStyle = 'black';
-	scrCtx.fillRect(0, 0, Game.screen.width, Game.screen.height);
+	scrCtx.fillRect(0, 0, Engine.screen.width, Engine.screen.height);
 
 	scrCtx.font = '250px Source Sans Pro';
 	scrCtx.textAlign = 'center';
@@ -1639,23 +1630,23 @@ Game.init = function(canvas) {
 
 	scrCtx.fillStyle = 'white';
 
-	scrCtx.fillText("Loading!", Game.screen.width/2, Game.screen.height/2);
+	scrCtx.fillText("Loading!", Engine.screen.width/2, Engine.screen.height/2);
 
 	Assets.loadAll()
 	.then(function() {
 		Monster.initTentaclePositions(Assets.images.sprites);
-		Game.level = new Level();
+		Engine.game = new Game();
 		Assets.music.play();
 		// Assets.music.play('intro');
 		// Assets.music.once('end', function() {
 			// Assets.music.play('main')
 		// });
-		Game.MainLoop.start();
+		Engine.MainLoop.start();
 	})
 	.catch(function() {
 		console.error(arguments)
 		scrCtx.fillStyle = 'black';
-		scrCtx.fillRect(0, 0, Game.screen.width, Game.screen.height);
+		scrCtx.fillRect(0, 0, Engine.screen.width, Engine.screen.height);
 
 		scrCtx.font = '150px Source Sans Pro';
 		scrCtx.textAlign = 'center';
@@ -1663,16 +1654,16 @@ Game.init = function(canvas) {
 
 		scrCtx.fillStyle = 'white';
 
-		scrCtx.fillText("Init failed! D:", Game.screen.width/2, Game.screen.height/2);
+		scrCtx.fillText("Init failed! D:", Engine.screen.width/2, Engine.screen.height/2);
 	});
 
 
 };
 
-Game.Assets = Assets;
+Engine.Assets = Assets;
 
 function Main() {
-	Game.init(document.getElementById('screen'));
+	Engine.init(document.getElementById('screen'));
 }
 document.body.onload = Main;
 //document.body.addEventListener('load', Main);
