@@ -35,6 +35,7 @@
 - puzzle platformer where you're a monster and have to eat people and spit out there skulls in places
 
 - you're cthuhlu and you fly around and kill things with cool tentacle effects
+	- yup
 
 
 ## things to have

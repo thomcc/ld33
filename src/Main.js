@@ -180,7 +180,7 @@ var Input = Game.Input = (function() {
 	};
 
 	var Input = {
-		mouse: { x: 0, y: 0, button: new Key() },
+		mouse: { x: 0, y: 0, worldX: 0, worldY: 0, button: new Key() },
 		keys: {
 			up: new Key(),
 			down: new Key(),
@@ -189,6 +189,10 @@ var Input = Game.Input = (function() {
 		},
 		bindings: {},
 		allKeys: null,
+		setBounds: function(x, y) {
+			this.mouse.worldX = this.mouse.x + x;
+			this.mouse.worldY = this.mouse.y + y;
+		},
 		init: function(canvas) {
 			var bindings = Input.bindings;
 			// @TODO(thom) handle simultaneous key presses for the
@@ -312,10 +316,221 @@ function lerp(a, b, t) {
 	return (1.0-t)*a + b*t;
 }
 
+// @NOTE: partial renderer bottleneck... somewhat optimized
+function bresenham(x0, y0, x1, y1, pixelData, color) {
+	x0 = x0|0; y0 = y0|0; x1 = x1|0; y1 = y1|0; color = color|0;
+	var dx = Math.abs(x1 - x0)|0;
+	var dy = Math.abs(y1 - y0)|0;
+	var sx = (x0 < x1) ? 1 : -1;
+	var sy = (y0 < y1) ? 1 : -1;
+	var err = dx - dy;
+	var pix = pixelData.pixels;
+	var width = pixelData.width>>>0;
+	var height = pixelData.height>>>0;
+	if (x0 >= 0 && x0 < width && y0 >= 0 && y0 < height) {
+		pix[x0+y0*width] = color;
+	}
+	else if (x1 < 0 || x1 >= width || y1 < 0 && y1 >= height) {
+		// technically not correct to do this but we don't care
+		// about lines that start and end off screen
+		console.warn("bresenham entirely off screen")
+		return;
+	}
+	while (true) {
+		pix[x0+y0*width] = color;
+		if (x0 === x1 && y0 === y1) {
+			break;
+		}
 
+		var e2 = err << 1;
+		if (e2 > -dy) {
+			err -= dy;
+			x0 += sx;
+			if (x0 < 0 || x0 > width) {
+				break;
+			}
+		}
+		if (e2 <  dx) {
+			err += dx;
+			y0 += sy;
+			if (y0 < 0 || y0 > height) {
+				break;
+			}
+		}
+	}
+}
 
 var TileSize = 20;
 
+// tentacles are stored as an array of structs of
+// {x, y, velX, velY, oldX, oldY}
+var SEG_X = 0;
+var SEG_Y = 1;
+var SEG_VX = 2;
+var SEG_VY = 3;
+var SEG_OLD_X = 4;
+var SEG_OLD_Y = 5;
+var SEG_SIZE = 6;
+// @NOTE: update bottleneck, optimized
+function Tentacle(numPoints, ox, oy, parent) {
+	this.parent = parent;
+	this.offsetX = ox;
+	this.offsetY = oy;
+	this.numPoints = numPoints;
+	this.data = new Float32Array(numPoints*SEG_SIZE);
+	// {x, y, vx, vy, ox, oy, nx, ny, angle}
+	this.drag = Math.random()*0.2 + 0.7;
+	this.drift = (Math.random() - 0.5)/100
+	this.nodeDistance = Math.random() * 0.8 + 1.0;
+}
+
+Tentacle.spacing = 5;
+Tentacle.size = 1;
+Tentacle.globalDrag = 0.02;
+Tentacle.gravity = 0.05;
+
+Tentacle.prototype.update = function(x, y) {
+	if (Math.random() < 0.01) {
+		this.drift += (Math.random() - 0.5)/100;
+		if (Math.abs(this.drift) >= 0.1) {
+			this.drift = 0;
+		}
+	}
+	var driftMul = this.drift;
+	if (Math.random() < 0.01) {
+		driftMul = (Math.random() - 0.5)/10;
+	}
+	var drift = driftMul * Math.sqrt(Math.sqrt(this.parent.vx*this.parent.vx + this.parent.vy*this.parent.vy));
+
+	var mx = Input.mouse.worldX;
+	var my = Input.mouse.worldY;
+	var mouseDeltaX = mx - this.parent.x;
+	var mouseDeltaY = my - this.parent.y;
+	if (Input.mouse.button.down) {
+		mouseDeltaX /= Game.screenWidth/Game.scale;
+		mouseDeltaY /= Game.screenHeight/Game.scale;
+		mouseDeltaX *= 2;
+		mouseDeltaY *= 2;
+	}
+	else {
+		mouseDeltaX = 0;
+		mouseDeltaY = 0;
+	}
+
+	var prevX = this.data[SEG_X];
+	var prevY = this.data[SEG_Y];
+
+	var length = +this.numPoints;
+	var data = this.data;
+	var drag = this.drag * (1.0 - Tentacle.globalDrag);
+	var size = Tentacle.size;
+	if (Input.mouse.button.down) {
+		size *= 1.5
+	}
+	size *= this.nodeDistance;
+
+	// var px = Input.mouse.button;
+
+	// @FIXME: should be using deltaTime...
+	for (var segIdx = SEG_SIZE, end = data.length; segIdx < end; segIdx += SEG_SIZE) {
+		data[segIdx+SEG_X] += data[segIdx+SEG_VX];
+		data[segIdx+SEG_Y] += data[segIdx+SEG_VY];
+
+		var segX = data[segIdx+SEG_X];
+		var segY = data[segIdx+SEG_Y];
+
+		var dx = prevX - segX;
+		var dy = prevY - segY;
+
+		var da = Math.atan2(dy, dx);
+
+		var px = segX + Math.cos(da) * size;
+		var py = segY + Math.sin(da) * size;
+
+		segX = data[segIdx+SEG_X] = prevX - (px - segX);
+		segY = data[segIdx+SEG_Y] = prevY - (py - segY);
+
+		data[segIdx+SEG_VX] = (segX - data[segIdx+SEG_OLD_X])*drag - drift + mouseDeltaX;
+		data[segIdx+SEG_VY] = (segY - data[segIdx+SEG_OLD_Y])*drag + Tentacle.gravity + mouseDeltaY;
+
+		data[segIdx+SEG_OLD_X] = segX;
+		data[segIdx+SEG_OLD_Y] = segY;
+
+		prevX = segX;
+		prevY = segY;
+	}
+}
+
+Tentacle.prototype.parentMoved = function(x, y) {
+	this.data[SEG_X] = x+this.offsetX;
+	this.data[SEG_Y] = y+this.offsetY;
+};
+
+Tentacle.prototype.setPosition = function(x, y) {
+	x += this.offsetX;
+	y += this.offsetY;
+	for (var i = 0; i < this.data.length; i += SEG_SIZE) {
+		this.data[i+SEG_X] = x + (Math.random() - 0.5)/10;
+		this.data[i+SEG_Y] = y + (Math.random() - 0.5)/10;
+	}
+};
+
+Tentacle.prototype.drawPath = function(ctx, sx, sy) {
+	var data = this.data;
+	ctx.beginPath();
+	ctx.moveTo(data[SEG_X]-sx, data[SEG_Y]-sy);
+	for (var i = SEG_SIZE, end = data.length; i < end; i += SEG_SIZE) {
+		ctx.lineTo(data[i+SEG_X]-sx+0.5, data[i+SEG_Y]-sy+0.5);
+	}
+};
+
+Tentacle.prototype.drawOnPixels = function(pixels, sx, sy, color) {
+	var data = this.data;
+
+	var px = data[SEG_X];
+	var py = data[SEG_Y];
+
+	var tentacleStartX = Math.round(px-sx+0.5);
+	var tentacleStartY = Math.round(py-sy+0.5);
+
+	var minXSeen = pixels.bounds.minX;
+	var minYSeen = pixels.bounds.minY;
+	var maxXSeen = pixels.bounds.maxX;
+	var maxYSeen = pixels.bounds.maxY;
+	var drewInitialDots = false;
+
+	for (var i = SEG_SIZE, end = data.length; i < end; i += SEG_SIZE) {
+		var nx = data[i+SEG_X];
+		var ny = data[i+SEG_Y];
+		var startX = Math.round(px-sx+0.5);
+		var startY = Math.round(py-sy+0.5);
+		var endX = Math.round(nx-sx+0.5);
+		var endY = Math.round(ny-sy+0.5);
+		bresenham(startX, startY, endX, endY, pixels, color);
+		if (!drewInitialDots) {
+
+			if (tentacleStartX >= 0 && tentacleStartX < pixels.width &&
+				tentacleStartY >= 0 && tentacleStartY < pixels.height) {
+				//pixels.pixels[tentacleStartX + tentacleStartY * pixels.width] = 0xffff00ff;
+			}
+			drewInitialDots = true;
+		}
+
+		minXSeen = Math.min(minXSeen, startX, endX);
+		minYSeen = Math.min(minYSeen, startY, endY);
+
+		maxXSeen = Math.max(maxXSeen, startX, endX);
+		maxYSeen = Math.max(maxYSeen, startY, endY);
+
+		px = nx;
+		py = ny;
+	}
+	pixels.bounds.minX = minXSeen;
+	pixels.bounds.minY = minYSeen;
+	pixels.bounds.maxX = maxXSeen;
+	pixels.bounds.maxY = maxYSeen;
+
+};
 
 function Monster(level) {
 	this.vx = 0;
@@ -327,7 +542,8 @@ function Monster(level) {
 	this.hitTimer = 0;
 
 	this.sprites = Assets.images.sprites;
-	this.setSize(0);
+	this.tentacles = [];
+	this.setSize(2);
 	this.level = level;
 }
 
@@ -365,10 +581,10 @@ Monster.initTentaclePositions = function(image) {
 	var pixelData = image.getPixelData();
 	var pixelWidth = pixelData.width;
 	var pixels = pixelData.pixels;
-	Monster.SizeData.forEach(function(level, i) {
-		var spriteInfo = level.sprites;
+	Monster.SizeData.forEach(function(size, i) {
+		var spriteInfo = size.sprites;
 
-		var sx = spriteInfo.x + spriteInfo.width*6;
+		var sx = spriteInfo.x + spriteInfo.width*5;
 		var sy = spriteInfo.y;
 
 		var sh = spriteInfo.height;
@@ -379,22 +595,37 @@ Monster.initTentaclePositions = function(image) {
 				var px = sx + x;
 				var py = sy + y;
 				var pixel = pixels[px + py * pixelWidth];
-				if (pixel === 0xffff00ff) {
-					level.tentaclePositions.push({x: x, y: y});
+				if ((pixel & 0xff000000) !== 0) {
+					size.tentaclePositions.push({x: x-spriteInfo.width/2, y: y-spriteInfo.height/2});
 				}
 			}
 		}
 	});
 }
 
-
+Monster.prototype.setPosition = function(x, y) {
+	this.x = x;
+	this.y = y;
+	for (var i = 0; i < this.tentacles.length; ++i) {
+		this.tentacles[i].setPosition(x, y);
+	}
+}
 
 Monster.prototype.setSize = function(l) {
 	this.size = l;
+	var sizeData = Monster.SizeData[l];
 	this.width = Monster.SizeData[l].sprites.width;
 	this.height = Monster.SizeData[l].sprites.height;
 
-	this.sprite = 0;
+	this.sprite = 0//4;
+	this.tentacles.length = 0;
+	for (var i = 0; i < sizeData.tentaclePositions.length; ++i) {
+		var numPoints = Math.floor(l * 5 + 5 * Math.random() + 20);
+		this.tentacles.push(new Tentacle(numPoints, sizeData.tentaclePositions[i].x, sizeData.tentaclePositions[i].y, this));
+		if (Math.random() < 0.1) {
+			this.tentacles.push(new Tentacle(numPoints, sizeData.tentaclePositions[i].x, sizeData.tentaclePositions[i].y, this));
+		}
+	}
 };
 
 Monster.prototype.update = function() {
@@ -402,6 +633,10 @@ Monster.prototype.update = function() {
 		--this.hitTimer;
 	}
 	this.move();
+	for (var i = 0; i < this.tentacles.length; ++i) {
+		this.tentacles[i].parentMoved(this.x, this.y);
+		this.tentacles[i].update();
+	}
 };
 
 Monster.speed = 300;
@@ -434,7 +669,6 @@ Monster.prototype.move = function() {
 	ddy *= Monster.jumpPower;
 
 	ddy += Monster.gravity; // gravity
-
 
 	var dragX = -Monster.drag * this.vx;
 	var dragY = -Monster.drag * this.vy;
@@ -571,16 +805,16 @@ Game.Monster = Monster;
 function Level() {
 	var tiles = Assets.images.level;
 	var pixelData = tiles.getPixelData();
-	this.tileWidth = pixelData.width;
-	this.tileHeight = pixelData.height;
+	this.columns = pixelData.width;
+	this.rows = pixelData.height;
 	var pix = pixelData.pixels;
-	var length = this.tileWidth*this.tileHeight;
+	var length = this.columns*this.rows;
 	this.tiles = [];
 
 	this.player = new Monster(this);
 	for (var i = 0; i < length; ++i) {
-		var x = i % this.tileWidth;
-		var y = Math.floor(i / this.tileWidth);
+		var x = i % this.columns;
+		var y = Math.floor(i / this.columns);
 
 		if (pix[i] === 0xff000000) {
 			this.tiles.push(1);
@@ -588,12 +822,27 @@ function Level() {
 		else {
 			this.tiles.push(0);
 			if (pix[i] === 0xffffffff) {
-				this.player.x = x*TileSize;
-				this.player.y = y*TileSize;
+				this.player.setPosition(x*TileSize, y*TileSize)
 			}
 		}
 	}
-	// this.
+
+	// @TODO: this belongs in a separate renderer
+	this.tentacleLayer = document.createElement('canvas');
+	var ctx = this.tentacleLayerContext = this.tentacleLayer.getContext('2d')
+
+	this.tentacleLayer.width = Game.screenWidth / Game.scale;
+	this.tentacleLayer.height = Game.screenHeight / Game.scale;
+	var tentaclePixels = ctx.createImageData(this.tentacleLayer.width, this.tentacleLayer.height);
+
+	this.tentaclePixels = {
+		imageData: tentaclePixels,
+		width: tentaclePixels.width,
+		height: tentaclePixels.height,
+		data: tentaclePixels.data,
+		bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 },
+		pixels: new Uint32Array(tentaclePixels.data.buffer)
+	};
 };
 
 Game.Level = Level;
@@ -602,19 +851,17 @@ Level.prototype.update = function() {
 	this.player.update();
 };
 
-
 Level.prototype.isBlocked = function(x, y) {
 	x = Math.round(x/TileSize-0.5);
 	y = Math.round(y/TileSize-0.5);
-
 	return this.getTile(x|0, y|0) !== 0;
 };
 
 Level.prototype.getTile = function(x, y) {
-	if (y < 0 || y >= this.tileHeight || x < 0 || x >= this.tileWidth) {
+	if (y < 0 || y >= this.rows || x < 0 || x >= this.columns) {
 		return -1;
 	}
-	return this.tiles[x+y*this.tileWidth];
+	return this.tiles[x+y*this.columns];
 };
 
 
@@ -624,6 +871,8 @@ Level.prototype.render = function(ctx, canvas) {
 
 	var maxX = this.player.x + canvas.width/2;
 	var maxY = this.player.y + canvas.height/2;
+
+	Input.setBounds(minX, minY);
 
 	var iMinX = Math.round(minX);
 	var iMinY = Math.round(minY);
@@ -674,16 +923,88 @@ Level.prototype.render = function(ctx, canvas) {
 		this.player.height
 	);
 
-	if (this.player.hitTimer > 0) {
+	var tentacleColor = this.player.hitTimer === 0 ? 0xff103031 : 0xff72dfff;
+
+	var tentacles = this.player.tentacles;
+	var tentaclePixels = this.tentaclePixels;
+	tentaclePixels.pixels.fill(0);
+	tentaclePixels.bounds.minX = 1000;
+	tentaclePixels.bounds.maxX = -1000;
+	tentaclePixels.bounds.minY = 1000;
+	tentaclePixels.bounds.maxY = -1000;
+
+
+	for (var i = 0, len = tentacles.length; i < len; ++i) {
+		tentacles[i].drawOnPixels(this.tentaclePixels, minX, minY, tentacleColor);
+	}
+
+	{
+		var outlineColor = 0xff000000;
+		var tMinX = Math.max((tentaclePixels.bounds.minX-1)|0, 0);
+		var tMinY = Math.max((tentaclePixels.bounds.minY-1)|0, 0);
+		var tMaxX = Math.min((tentaclePixels.bounds.maxX+1)|0, tentaclePixels.width-1);
+		var tMaxY = Math.min((tentaclePixels.bounds.maxY+1)|0, tentaclePixels.height-1);
+		var pix32 = tentaclePixels.pixels;
+		var tpixW = tentaclePixels.width;
+		var tpixH = tentaclePixels.height;
+		for (var ty = tMinY; ty <= tMaxY; ++ty) {
+			for (var tx = tMinX; tx <= tMaxX; ++tx) {
+				var pixel = pix32[(tx+0) + (ty+0) * tpixW];
+
+				if (pixel !== 0 && pixel !== 0xffff00ff) {
+					// if ()  {
+					// 	pix32[(tx+0) + (ty+0) * tpixW] = tentacleColor;
+					// 	if (tx !== 0 && pix32[(tx-1) + (ty+0) * tpixW] === 0) {
+					// 		pix32[(tx-1) + (ty+0) * tpixW] = tentacleColor;
+					// 	}
+					// }
+					continue;
+				}
+				var tocol = pixel === 0xffff00ff ? tentacleColor-1 : outlineColor;
+				if (ty+1 < tpixH && pix32[(tx+0) + (ty+1) * tpixW] === tentacleColor) {
+					pix32[(tx+0) + (ty+0) * tpixW] = tocol;
+				}
+				else if (ty-1 >= 0 && (pix32[(tx+0) + (ty-1) * tpixW] === tentacleColor)) {
+					pix32[(tx+0) + (ty+0) * tpixW] = tocol;
+				}
+				else if (tx-1 >= 0 && pix32[(tx-1) + (ty+0) * tpixW] === tentacleColor) {
+					pix32[(tx+0) + (ty+0) * tpixW] = tocol;
+				}
+				else if (tx+1 < tpixW && pix32[(tx+1) + (ty+0) * tpixW] === tentacleColor) {
+					pix32[(tx+0) + (ty+0) * tpixW] = tocol;
+				}
+				else if (pixel === 0xffff00ff) {
+					pix32[(tx+0) + (ty+0) * tpixW] = tentacleColor-1;
+					if (pixel === 0xffff00ff && ty+1 < tpixH && pix32[(tx+0) + (ty+1) * tpixW] === 0) {
+						pix32[(tx+0) + (ty+1) * tpixW] = outlineColor
+					}
+				}
+			}
+		}
+		// for (var ty = tMinY; ty <= tMaxY; ++ty) {
+		// 	for (var tx = tMinX; tx <= tMaxX; ++tx) {
+
+		// 	}
+		// }
+	}
+
+
+	this.tentacleLayerContext.clearRect(0, 0, this.tentacleLayer.width, this.tentacleLayer.height);
+	this.tentacleLayerContext.putImageData(this.tentaclePixels.imageData, 0, 0);
+
+	ctx.drawImage(this.tentacleLayer, 0, 0);
+
+	if (this.player.hitTimer !== 0) {
+
 		var alpha = 1.0-Math.abs(this.player.hitTimer-10.0)/10.0;
 
 		var oldAlpha = ctx.globalAlpha;
-		//ctx.globalAlpha = alpha;
+		ctx.globalAlpha = alpha;
 		ctx.drawImage(
 			Assets.images.sprites.image,
 
 			//@TODO: hack
-			this.player.width*7,
+			this.player.width*6,
 			this.player.spriteY(),
 			this.player.width,
 			this.player.height,
@@ -694,8 +1015,10 @@ Level.prototype.render = function(ctx, canvas) {
 			this.player.height
 		);
 
-		//ctx.globalAlpha = oldAlpha;
+		ctx.globalAlpha = oldAlpha;
 	}
+
+
 
 	// ctx.strokeStyle = 'red';
 	// ctx.strokeRect(Math.round(this.player.x - minX - this.player.width/2)+0.5,
@@ -783,20 +1106,6 @@ Game.init = function(canvas) {
 
 	var drawCtx = drawCanvas.getContext('2d');
 
-	// var tentacleLayer = document.createElement('canvas');
-
-	// tentacleLayer.width = Game.screenWidth / Game.scale;
-	// tentacleLayer.height = Game.screenHeight / Game.scale;
-	// Game.tentacleLayer = tentacleLayer;
-	// var tentaclePixels = drawCtx.createImageData(Game.screenWidth/Game.scale, Game.screenHeight/Game.scale);
-
-	// Game.tentaclePixels = {
-	// 	imageData: tentaclePixels,
-	// 	width: tentaclePixels.width,
-	// 	height: tentaclePixels.height,
-	// 	data: tentaclePixels.data,
-	// 	pixels: new Uint32Array(tentaclePixels.data.buffer)
-	// };
 
 	// var drawCtx = drawCanvas.getContext('2d');
 
@@ -814,8 +1123,8 @@ Game.init = function(canvas) {
 
 	Assets.loadAll()
 	.then(function() {
-		Game.level = new Level();
 		Monster.initTentaclePositions(Assets.images.sprites);
+		Game.level = new Level();
 		Assets.music.play();
 		// Assets.music.play('intro');
 		// Assets.music.once('end', function() {
