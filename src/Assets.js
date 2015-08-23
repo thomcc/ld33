@@ -10,6 +10,15 @@ var Assets = {
 		}),
 		playerDie: new Howl({
 			src: ['res/player_die.wav']
+		}),
+		shootBullet: new Howl({
+			src: ['res/bullet.wav']
+		}),
+		hurtm: new Howl({
+			src: ['res/hurtm.wav']
+		}),
+		mdie: new Howl({
+			src: ['res/mdie.wav']
 		})
 	},
 	music: new Howl({
@@ -75,7 +84,8 @@ Assets.loadAll = function() {
 		loadImage('level', 'res/lvl.png'),
 		loadImage('sprites', 'res/sprites.png'),
 		loadImage('eye', 'res/eye.png'),
-		loadImage('misc', 'res/misc.png')
+		loadImage('misc', 'res/misc.png'),
+		loadImage('copter', 'res/copter.png')
 	]);
 }
 

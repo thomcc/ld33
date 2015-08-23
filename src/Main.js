@@ -348,10 +348,23 @@ function clamp01(v) {
 	return clamp(v, 0, 1);
 };
 
+function pingPong(t, len) {
+	t -= Math.floor(t/(len*2))*len*2;
+	return len - Math.abs(t - len);
+}
+
 function distBetween(x0, y0, x1, y1) {
 	var dx = x1 - x0;
 	var dy = y1 - y0;
 	return Math.sqrt(dx*dx+dy*dy);
+}
+
+function normLen(x, y) {
+	var l = x*x+y*y;
+	if (l < 0.001) {
+		return 1.0;
+	}
+	return Math.sqrt(l);
 }
 
 // @NOTE: partial renderer bottleneck... somewhat optimized
@@ -871,9 +884,7 @@ Monster.prototype.move = function() {
 	}
 
 	if (hitSide && this.hitTimer === 0) {
-		this.hurtFor(40);
-		// this.hitTimer = 20;
-		// Assets.sounds.ouch.play();
+		this.hurtFor((5*Math.random()+5)|0);
 	}
 };
 
@@ -952,6 +963,85 @@ PixelBuffer.prototype.putPixel = function(x, y, c) {
 		}
 	}
 };
+
+function Timer() {
+	this.items = [];
+}
+
+Timer.prototype.find = function(name) {
+	for (var i = 0; i < this.items.length; ++i) {
+		if (this.items[i].name === name) {
+			return i;
+		}
+	}
+	return -1;
+};
+
+Timer.prototype.test = function(name) {
+	var idx = this.find(name);
+	if (idx < 0) {
+		return true;
+	}
+	return this.items[idx].delay > 0;
+};
+
+Timer.prototype.testOrSet = function(name, delay) {
+	var idx = this.find(name);
+	if (idx < 0) {
+		this.items.push({delay: delay, name: name});
+		return true;
+	}
+	return false;
+};
+
+Timer.prototype.set = function(name, delay) {
+	var idx = this.find(name);
+	if (idx < 0) {
+		this.items.push({delay: delay, name: name});
+	}
+	else {
+		this.items[idx].delay = delay;
+	}
+};
+
+Timer.prototype.clear = function(name) {
+	if (!name) {
+		this.items.length = 0;
+	}
+	else {
+		var idx = this.find(name);
+		if (idx >= 0) {
+			this.items[idx] = this.items[this.items.length-1];
+			this.items.pop();
+		}
+	}
+};
+
+Timer.prototype.update = function(name) {
+	if (!name) {
+		var j = 0;
+		for (var i = 0; i < this.items.length; ++i) {
+			this.items[i].delay--;
+			if (this.items[i].delay > 0) {
+				this.items[j++] = this.items[i];
+			}
+		}
+		this.items.length = j;
+	}
+	else {
+		var idx = this.find(name);
+		if (idx >= 0) {
+			this.items[idx].delay--;
+			if (this.items[idx].delay <= 0) {
+				this.items[idx] = this.items[this.items.length-1];
+				this.items.pop();
+			}
+		}
+	}
+};
+
+
+Engine.Timer = Timer;
 
 function Camera(game) {
 	this.game = game;
@@ -1064,30 +1154,23 @@ function Game() {
 		}
 	}
 
+	this.addEntity(new Copter(this, 25*TileSize, 25*TileSize));
+
+
 	// @TODO: this belongs in a separate renderer
 	var vpwidth = Engine.screenWidth / Engine.scale;
 	var vpheight = Engine.screenHeight / Engine.scale;
+
+	this.viewportWidth = vpwidth;
+	this.viewportHeight = vpheight;
+
 	this.tentacleBuffer = new PixelBuffer(vpwidth, vpheight);
 	this.effectBuffer = new PixelBuffer(vpwidth, vpheight);
 	this.effectBuffer.trackBounds = false;
 	this.camera = new Camera(this);
-	// this.viewport = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-	/*
-	this.tentacleLayer = document.createElement('canvas');
-	var ctx = this.tentacleLayerContext = this.tentacleLayer.getContext('2d')
 
-	this.tentacleLayer.width = Engine.screenWidth / Engine.scale;
-	this.tentacleLayer.height = Engine.screenHeight / Engine.scale;
-	var tentaclePixels = ctx.createImageData(this.tentacleLayer.width, this.tentacleLayer.height);
+	this.entityPosFeedback = new Uint8Array(this.viewportWidth*this.viewportHeight);
 
-	this.tentaclePixels = {
-		imageData: tentaclePixels,
-		width: tentaclePixels.width,
-		height: tentaclePixels.height,
-		data: tentaclePixels.data,
-		bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 },
-		pixels: new Uint32Array(tentaclePixels.data.buffer)
-	};*/
 };
 
 Engine.Game = Game;
@@ -1115,13 +1198,14 @@ Game.prototype.update = function() {
 
 	this.updateArray(this.effects);
 	this.updateArray(this.entities);
+	/*
 	if (Math.random() < 0.05) {
 		var x = 25*TileSize;
 		var y = 25*TileSize;
 		var dx = this.player.x - x;
 		var dy = this.player.y - y;
 		this.addEntity(new Bullet(this, {x: x, y: y}, dx, dy));
-	}
+	}*/
 	this.camera.update();
 };
 
@@ -1142,33 +1226,60 @@ Game.prototype.addEntity = function(e) {
 	this.entities.push(e);
 };
 
+Game.prototype.tentacleTouched = function(x, y, rw, rh) {
+	var left = x-rw;
+	var right = x+rw;
+	var top = y-rh;
+	var bottom = y+rh;
+	if (right < this.camera.minX || left > this.camera.maxX || bottom < this.camera.minY || top > this.camera.maxY) {
+		return false;
+	}
+	// move to screenspace
+	var ls = Math.round(left - this.camera.minX);
+	var rs = Math.round(right - this.camera.minX);
+	var ts = Math.round(top - this.camera.minY);
+	var bs = Math.round(bottom - this.camera.minY);
+
+	var tbuf = this.tentacleBuffer;
+	var bbox = tbuf.bounds;
+
+	if (rs < bbox.minX || ls > bbox.maxX || bs < bbox.minY || ts > bbox.maxY) {
+		return false;
+	}
+
+	if (ls < 0) {
+		ls = 0;
+	}
+	if (ts < 0) {
+		ts = 0
+	}
+	if (rs >= this.viewportHeight) {
+		rs = this.viewportHeight-1;
+	}
+	if (bs >= this.viewportWidth) {
+		bs = this.viewportWidth-1;
+	}
+
+	// Assert(rs >= ls && bs >= ts);
+
+	// Assert(ls >= 0 && ls < this.viewportWidth &&
+	// 	rs >= 0 && rs < this.viewportWidth &&
+	// 	ts >= 0 && ts < this.viewportHeight &&
+	// 	bs >= 0 && bs < this.viewportHeight, "tentacleTouch failure");
+
+	var width = this.viewportWidth;
+	for (var y = ts; y <= bs; ++y) {
+		for (var x = ls; x <= rs; ++x) {
+			if (tbuf.pixels[x+y*width] !== 0) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
 
 
 Game.prototype.render = function(ctx, canvas) {
-	/*
-	var minX = this.player.x - canvas.width/2;
-	var minY = this.player.y - canvas.height/2;
-
-	if (minX < 0) {
-		minX = 0;
-	}
-	if (minY < 0) {
-		minY = 0
-	}
-	if (minX + canvas.width >= this.columns * TileSize) {
-		minX = this.columns*TileSize - canvas.width;
-	}
-	if (minY + canvas.height >= this.rows * TileSize) {
-		minY = this.rows * TileSize - canvas.height;
-	}*/
-
-	//var maxX = minX + canvas.width;
-	//var maxY = minY + canvas.height;
-
-	// this.viewport.minX = minX;
-	// this.viewport.maxX = maxX;
-	// this.viewport.minY = minY;
-	// this.viewport.maxY = maxY;
 
 	var minX = this.camera.minX;
 	var maxX = this.camera.maxX;
@@ -1543,6 +1654,7 @@ function Bullet(game, shooter, dx, dy, speed) {
 
 	this.vx = dx * speed;
 	this.vy = dy * speed;
+	Assets.sounds.shootBullet.play();
 };
 
 Bullet.prototype = Object.create(Entity.prototype);
@@ -1621,6 +1733,139 @@ Bullet.prototype.render = function(c, sx, sy, pix) {
 	}
 };
 
+function Copter(game, x, y) {
+	Entity.call(this, game);
+	this.timer = new Timer();
+	this.setPosition(x, y);
+	this.hp = 10;
+	this.gravity = 0;
+	this.drag = 0.9;
+	this.r = 8;
+	this.sprite = 0;
+}
+
+Engine.Copter = Copter;
+Copter.prototype = Object.create(Entity.prototype);
+Copter.prototype.constructor = Copter;
+
+Copter.prototype.die = function() {
+	Assets.sounds.mdie.play();
+	this.active = false;
+	for (var i = 0; i < 3; ++i) {
+		this.game.addEffect(new Gib(this.game, this.x, this.y, false));
+	}
+}
+
+Copter.prototype.hurt = function(dmg) {
+	this.timer.set('hit', 5);
+	this.hp -= dmg;
+	if (this.hp <= 0) {
+		this.hp = 0;
+		this.die();
+	}
+	else {
+		if (this.soundId == null || !Assets.sounds.hurtm.playing(this.soundId)) {
+			this.soundId = Assets.sounds.hurtm.play();
+		}
+	}
+};
+
+Copter.prototype.update = function() {
+	Entity.prototype.update.call(this);
+	this.sprite = (this.sprite+1) % 16;
+
+	this.timer.update();
+	if (distBetween(this.x, this.y, this.game.player.x, this.game.player.y) < 100) {
+		if (this.timer.test('hit')) {
+			if (this.game.tentacleTouched(this.x, this.y, this.r, this.r)) {
+				this.timer.set('hit', 5);
+				this.hurt(1);
+			}
+		}
+
+		if (this.timer.testOrSet('shoot', 60)) {
+			var dx = this.game.player.x - this.x;
+			var dy = this.game.player.y - this.y;
+			var len = normLen(dx, dy);
+			dx /= len;
+			dy /= len;
+			dx += (Math.random()-0.5) / 10;
+			dy += (Math.random()-0.5) / 10;
+			len = normLen(dx, dy);
+			this.game.addEntity(new Bullet(this.game, this, dx/len, dy/len));
+		}
+
+		if (this.timer.testOrSet('dart', 40)) {
+			var dx = this.x - this.game.player.x;
+			var dy = this.y - this.game.player.y;
+			var len = normLen(dx, dy);
+			dx /= len;
+			dy /= len;
+			this.vx += dx*5;
+			this.vy += dy*5;
+		}
+
+	}
+	else {
+
+		if (this.timer.testOrSet('dart', 120)) {
+			var dx, dy;
+			do {
+				dx = Math.random()*2-1;
+				dy = Math.random()*2-1;
+				var len = normLen(dx, dy);
+				dx /= len;
+				dy /= len;
+			} while (this.game.isBlocked(this.x+dx, this.y+dy) ||
+			         this.game.isBlocked(this.x+dx*TileSize, this.y+dy*TileSize));
+			this.vx += dx*5;
+			this.vy += dy*5;
+		}
+	}
+
+	this.vx *= this.drag;
+	this.vy *= this.drag;
+
+	this.doMove();
+
+
+}
+
+Copter.prototype.render = function(c, sx, sy, pix) {
+	var px = Math.round(this.x - sx);
+	var py = Math.round(this.y - sy);
+	var isHit = !this.timer.test('hit');
+	var sprite = this.sprite >= 8 ? 8 - this.sprite : this.sprite;
+
+	if (isHit) {
+		sprite += 8;
+	}
+	var spriteX = sprite % 4;
+	var spriteY = Math.floor(sprite/4);
+	c.drawImage(
+		Assets.images.copter.image,
+		spriteX*16, spriteY*16, 16, 16,
+		px-8, py-8, 16, 16);
+
+
+
+
+}
+
+
+
+function Guy(game) {
+	Entity.call(this, game);
+
+}
+
+Engine.Guy = Guy;
+
+Guy.prototype = Object.create(Entity.prototype);
+
+
+
+
 Engine.loseTime = 0;
 Engine.gameOver = function() {
 	Engine.loseTime = Engine.now();
@@ -1632,7 +1877,7 @@ Engine.gameOver = function() {
 		Assets.deathMusic.play();
 		Assets.deathMusic.fade(0.0, 1.0, 1.0);
 	});
-}
+};
 
 Engine.update = function() {
 	Engine.emit('update');
