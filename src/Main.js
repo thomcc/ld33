@@ -340,6 +340,12 @@ function lerp(a, b, t) {
 	return (1.0-t)*a + b*t;
 }
 
+function distBetween(x0, y0, x1, y1) {
+	var dx = x1 - x0;
+	var dy = y1 - y0;
+	return Math.sqrt(dx*dx+dy*dy);
+}
+
 // @NOTE: partial renderer bottleneck... somewhat optimized
 function bresenham(x0, y0, x1, y1, pixelData, color) {
 	x0 = x0|0; y0 = y0|0; x1 = x1|0; y1 = y1|0; color = color|0;
@@ -509,11 +515,12 @@ Tentacle.prototype.drawPath = function(ctx, sx, sy) {
 };
 
 Tentacle.prototype.gibify = function(level) {
-	for (var i = 0; i < this.data.length; i += SEG_SIZE*4) {
+	var stride = (Math.floor(this.numPoints / 5))*SEG_SIZE;
+	for (var i = 0; i < this.data.length; i += stride) {
 		if (level.isBlocked(this.data[i+SEG_X], this.data[i+SEG_Y])) {
 			continue;
 		}
-		var gib = new Gib(level, this.data[i+SEG_X], this.data[i+SEG_Y]);
+		var gib = new Gib(level, this.data[i+SEG_X], this.data[i+SEG_Y], true);
 		gib.vx += this.data[i+SEG_VX]/2.0;
 		gib.vy += this.data[i+SEG_VY]/2.0;
 		level.addEffect(gib);
@@ -672,7 +679,7 @@ Monster.prototype.die = function() {
 	for (var i = 0; i < 30; ++i) {
 		var ox = Math.random() * this.width - this.width/2;
 		var oy = Math.random() * this.height - this.height / 2;
-		this.level.addEffect(new Gib(this.level, this.x+ox, this.y+oy));
+		this.level.addEffect(new Gib(this.level, this.x+ox, this.y+oy, true));
 	}
 	for (var i = 0; i < this.tentacles.length; ++i) {
 		this.tentacles[i].gibify(this.level);
@@ -738,6 +745,7 @@ Monster.speed = 300;
 Monster.jumpPower = 4000;
 Monster.drag = 2.5;
 Monster.gravity = 100;
+
 Monster.prototype.move = function() {
 	var ddx = 0;
 	var ddy = 0;
@@ -898,6 +906,46 @@ Monster.prototype.spriteY = function() {
 
 Game.Monster = Monster;
 
+function PixelBuffer(w, h) {
+	this.width = w;
+	this.height = h;
+	this.canvas = document.createElement('canvas');
+	this.context = this.canvas.getContext('2d')
+
+	this.canvas.width = w;
+	this.canvas.height = h;
+	this.imageData = this.context.createImageData(w, h);
+	this.bounds = { minX: w, maxX: 0, minY: h, maxY: 0 };
+	this.pixels = new Uint32Array(this.imageData.data.buffer);
+	this.trackBounds = false;
+}
+
+PixelBuffer.prototype.reset = function() {
+	this.bounds.minX = this.width;
+	this.bounds.maxX = 0;
+	this.bounds.minY = this.height;
+	this.bounds.maxY = 0;
+	this.pixels.fill(0);
+};
+
+PixelBuffer.prototype.update = function() {
+	this.context.clearRect(0, 0, this.width, this.height);
+	this.context.putImageData(this.imageData, 0, 0);
+};
+
+PixelBuffer.prototype.putPixel = function(x, y, c) {
+	if (x >= 0 && x < this.width && y >= 0 && y < this.height) {
+		this.pixels[x+y*this.width] = c;
+		if (this.trackBounds) {
+			this.minX = Math.min(this.minX, x);
+			this.maxX = Math.max(this.maxX, x);
+			this.minY = Math.min(this.minY, y);
+			this.maxY = Math.max(this.maxY, y);
+		}
+	}
+};
+
+
 function Level() {
 	var tiles = Assets.images.level;
 	var pixelData = tiles.getPixelData();
@@ -905,6 +953,7 @@ function Level() {
 	this.rows = pixelData.height;
 	var pix = pixelData.pixels;
 	var length = this.columns*this.rows;
+
 	this.tiles = [];
 
 	this.effects = [];
@@ -927,6 +976,13 @@ function Level() {
 	}
 
 	// @TODO: this belongs in a separate renderer
+	var vpwidth = Game.screenWidth / Game.scale;
+	var vpheight = Game.screenHeight / Game.scale;
+	this.tentacleBuffer = new PixelBuffer(vpwidth, vpheight);
+	this.effectBuffer = new PixelBuffer(vpwidth, vpheight);
+	this.effectBuffer.trackBounds = false;
+
+	/*
 	this.tentacleLayer = document.createElement('canvas');
 	var ctx = this.tentacleLayerContext = this.tentacleLayer.getContext('2d')
 
@@ -941,7 +997,7 @@ function Level() {
 		data: tentaclePixels.data,
 		bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 },
 		pixels: new Uint32Array(tentaclePixels.data.buffer)
-	};
+	};*/
 };
 
 Game.Level = Level;
@@ -965,11 +1021,17 @@ Level.prototype.updateArray = function(arr) {
 };
 
 Level.prototype.update = function() {
-	//if (!this.player.dead) {
-		this.player.update();
-	//}
+	this.player.update();
+
 	this.updateArray(this.effects);
 	this.updateArray(this.entities);
+	if (Math.random() < 0.05) {
+		var x = 25*TileSize;
+		var y = 25*TileSize;
+		var dx = this.player.x - x;
+		var dy = this.player.y - y;
+		this.addEntity(new Bullet(this, {x: x, y: y}, dx, dy));
+	}
 };
 
 Level.prototype.isBlocked = function(x, y) {
@@ -983,6 +1045,10 @@ Level.prototype.getTile = function(x, y) {
 		return -1;
 	}
 	return this.tiles[x+y*this.columns];
+};
+
+Level.prototype.addEntity = function(e) {
+	this.entities.push(e);
 };
 
 Level.prototype.render = function(ctx, canvas) {
@@ -1047,16 +1113,13 @@ Level.prototype.render = function(ctx, canvas) {
 		var tentacleColor = this.player.hitTimer === 0 ? 0xff103031 : 0xff72dfff;
 
 		var tentacles = this.player.tentacles;
-		var tentaclePixels = this.tentaclePixels;
-		tentaclePixels.pixels.fill(0);
-		tentaclePixels.bounds.minX = 1000;
-		tentaclePixels.bounds.maxX = -1000;
-		tentaclePixels.bounds.minY = 1000;
-		tentaclePixels.bounds.maxY = -1000;
+
+		var tentaclePixels = this.tentacleBuffer;
+		tentaclePixels.reset();
 
 
 		for (var i = 0, len = tentacles.length; i < len; ++i) {
-			tentacles[i].drawOnPixels(this.tentaclePixels, minX, minY, tentacleColor);
+			tentacles[i].drawOnPixels(this.tentacleBuffer, minX, minY, tentacleColor);
 		}
 
 		{
@@ -1104,11 +1167,11 @@ Level.prototype.render = function(ctx, canvas) {
 			}
 		}
 
+		tentaclePixels.update();
+		// this.tentacleLayerContext.clearRect(0, 0, this.tentacleLayer.width, this.tentacleLayer.height);
+		// this.tentacleLayerContext.putImageData(this.tentaclePixels.imageData, 0, 0);
 
-		this.tentacleLayerContext.clearRect(0, 0, this.tentacleLayer.width, this.tentacleLayer.height);
-		this.tentacleLayerContext.putImageData(this.tentaclePixels.imageData, 0, 0);
-
-		ctx.drawImage(this.tentacleLayer, 0, 0);
+		ctx.drawImage(tentaclePixels.canvas, 0, 0);
 
 		if (this.player.hitTimer !== 0) {
 
@@ -1133,18 +1196,68 @@ Level.prototype.render = function(ctx, canvas) {
 
 			ctx.globalAlpha = oldAlpha;
 		}
-
 	}
 
+	this.effectBuffer.reset();
+
 	for (var fxi = 0; fxi < this.effects.length; ++fxi) {
-		this.effects[fxi].render(ctx, minX, minY);
+		// var fx = this.effects[fxi];
+		// var fxx = fx.x-minX;
+		// var fxy = fx.y-minY;
+		// if (fxx)
+		// if (fx.x - minX < 0 || fx.x - )
+		this.effects[fxi].render(ctx, minX, minY, this.effectBuffer);
 	}
 
 	for (var ei = 0; ei < this.entities.length; ++ei) {
-		this.entities[ei].render(ctx, minX, minY);
+		this.entities[ei].render(ctx, minX, minY, this.effectBuffer);
 	}
+
+	this.effectBuffer.update();
+	ctx.drawImage(this.effectBuffer.canvas, 0, 0);
 }
 
+var Movable = {};
+
+Game.Movable = Movable;
+
+Movable.doMove = function() {
+	var s = Math.ceil(Math.sqrt(this.vx*this.vx+this.vy*this.vy));
+	for (var i = 0; i < s; ++i)	{
+		this._move(this.vx/s, 0);
+		this._move(0, this.vy/s);
+	}
+};
+
+Movable._move = function(dx, dy) {
+	if (!this.active) {
+		return;
+	}
+	var nx = this.x+dx;
+	var ny = this.y+dy;
+	if (this.level.isBlocked(nx-this.r, ny-this.r) ||
+		this.level.isBlocked(nx-this.r, ny+this.r) ||
+		this.level.isBlocked(nx+this.r, ny-this.r) ||
+		this.level.isBlocked(nx+this.r, ny+this.r)) {
+		this.collide(dx, dy);
+	}
+	else {
+		this.x = nx;
+		this.y = ny;
+	}
+};
+
+Movable.collide = function(dx, dy) {};
+
+function mixin(type, mixin) {
+	Object.keys(mixin).forEach(function(k) {
+		type.prototype[k] = mixin[k];
+	});
+	return type;
+}
+
+
+// @TODO: need to optimize: game chokes when a lot of blood/gibs are on screen
 function Particle(level, x, y) {
 	this.level = level;
 	this.active = true;
@@ -1173,10 +1286,12 @@ function Particle(level, x, y) {
 	this.vx = this.vx/size*xSpeed;
 	this.vy = this.vy/size*ySpeed;
 
-	this.sprite = -1
+	this.sprite = -1;
 }
 
 Game.Particle = Particle;
+
+mixin(Particle, Movable);
 
 Particle.prototype.update = function() {
 	this.life--;
@@ -1192,31 +1307,6 @@ Particle.prototype.update = function() {
 	this.doMove();
 };
 
-Particle.prototype.doMove = function() {
-	var s = Math.ceil(Math.sqrt(this.vx*this.vx+this.vy*this.vy));
-	for (var i = 0; i < s; ++i)	{
-		this._move(this.vx/s, 0);
-		this._move(0, this.vy/s);
-	}
-};
-
-Particle.prototype._move = function(dx, dy) {
-	if (!this.active) {
-		return;
-	}
-	var nx = this.x+dx;
-	var ny = this.y+dy;
-	if (this.level.isBlocked(nx-this.r, ny-this.r) ||
-		this.level.isBlocked(nx-this.r, ny+this.r) ||
-		this.level.isBlocked(nx+this.r, ny-this.r) ||
-		this.level.isBlocked(nx+this.r, ny+this.r)) {
-		this.collide(dx, dy);
-	}
-	else {
-		this.x = nx;
-		this.y = ny;
-	}
-};
 
 Particle.prototype.collide = function(dx, dy) {
 	if (dx !== 0) this.vx *= -this.bounce;
@@ -1258,15 +1348,21 @@ function Blood(level, x, y) {
 Blood.prototype = Object.create(Particle.prototype);
 Blood.prototype.constructor = Blood;
 
-Blood.prototype.getColor = function() {
-	return 'rgb(160, 0, 0)';
-};
+// Blood.prototype.getColor = function() {
+	// return 'rgb(160, 0, 0)';
+// };
 
 Game.Blood = Blood;
 
-function Gib(level, x, y) {
+Blood.prototype.render = function(c, sx, sy, pix) {
+	var px = Math.round(this.x - sx);
+	var py = Math.round(this.y - sy);
+	pix.putPixel(px, py, 0xff0000a0);
+}
+
+function Gib(level, x, y, isMonstrous) {
 	Particle.call(this, level, x, y);
-	this.sprite = 0;
+	this.sprite = isMonstrous ? 1 : 0;
 }
 
 Gib.prototype = Object.create(Particle.prototype);
@@ -1282,7 +1378,136 @@ Gib.prototype.update = function() {
 	blood.vx += this.vx / 2;
 	blood.vy += this.vy / 2;
 	this.level.addEffect(blood);
+};
+
+
+function Entity(level) {
+	this.level = level;
+	this.active = true;
+
+	this.x = 0;
+	this.y = 0;
+
+	this.vx = 0;
+	this.vy = 0;
+
+	this.r = 1;
 }
+
+mixin(Entity, Movable);
+
+Game.Entity = Entity;
+
+Entity.prototype.update = function() {}
+Entity.prototype.render = function(c, mx, my) {};
+
+Entity.prototype.setPosition = function(x, y) {
+	this.y = y;
+	this.x = x;
+};
+
+function Bullet(level, shooter, dx, dy, speed) {
+	Entity.call(this, level);
+	if (speed == null) {
+		speed = 4;
+	}
+	this.damage = Math.ceil(Math.random() * 4);
+	this.lastX = 0;
+	this.lastY = 0;
+	this.setPosition(shooter.x, shooter.y);
+
+	this.maxDist = 300;
+	var len = Math.sqrt(dx*dx + dy*dy);
+	if (len !== 0) {
+		dx /= len;
+		dy /= len;
+	}
+
+	this.vx = dx * speed;
+	this.vy = dy * speed;
+};
+
+Bullet.prototype = Object.create(Entity.prototype);
+Bullet.prototype.constructor = Bullet;
+
+Bullet.prototype.setPosition = function(x, y) {
+	this.startY = this.y = this.lastY = y;
+	this.startX = this.x = this.lastX = x;
+};
+
+Bullet.prototype.update = function() {
+	this.lastX = this.x;
+	this.lastY = this.y;
+	Entity.prototype.update.call(this);
+	this.doMove();
+	if (this.collidesWithPlayer()) {
+		this.onPlayerCollision();
+	}
+	else if (this.maxDist > 0 && distBetween(this.x, this.y, this.startX, this.startY) >= this.maxDist) {
+		this.active = false;
+	}
+
+};
+
+Bullet.prototype.collidesWithPlayer = function() {
+	var player = this.level.player;
+	var pLeft = player.x - player.width/2;
+	var pRight = player.x + player.width/2;
+	var pTop = player.y - player.height/2;
+	var pBottom = player.y + player.height/2;
+
+	var tLeft = this.x - this.r;
+	var tRight = this.x + this.r;
+	var tBottom = this.y + this.r;
+	var tTop = this.y - this.r;
+
+	return !(
+		pLeft > tLeft || pRight < tRight ||
+		pTop > tTop || pBottom < tBottom);
+}
+
+Bullet.prototype.onPlayerCollision = function() {
+	this.active = false;
+	var p = this.level.player;
+	p.hurtFor(this.damage);
+	var gib = new Gib(this.level, this.x, this.y, true);
+	gib.vx += this.vx;
+	gib.vy += this.vy;
+	this.level.addEffect(gib);
+};
+
+Bullet.prototype.collide = function() {
+	this.active = false;
+};
+
+Bullet.prototype.render = function(c, sx, sy, pix) {
+	var px = Math.round(this.x - sx);
+	var py = Math.round(this.y - sy);
+
+	var opx = Math.round(this.lastX - sx);
+	var opy = Math.round(this.lastY - sy);
+	var dx = px-opx;
+	var dy = py-opy;
+	var steps = Math.ceil(Math.sqrt(dx*dx+dy*dy));
+	for (var i = 0; i < steps; ++i) {
+		if (Math.random() * steps < i) {
+			continue;
+		}
+		var br = (200 - i * 200 / steps)|0;
+		var xx = (px - dx * i / steps)|0;
+		var yy = (py - dy * i / steps)|0;
+		var pixel = (0x010101*br)|0xff000000;
+		pix.putPixel(xx, yy, pixel);
+		//c.globalAlpha = Math.max(0, Math.min(1, 0.5 + (br/255/2)));
+		//c.fillRect(xx, yy, 1, 1);
+	}
+};
+
+
+
+
+
+
 
 Game.loseTime = 0;
 Game.gameOver = function() {
@@ -1376,7 +1601,7 @@ Game.render = function() {
 			screenCtx.fillText("Refresh to try again", Game.screen.width/2, Game.screen.height*3/4)
 
 		} else {
-			screenCtx.fillText("You were the monster!", Game.screen.width/2, Game.screen.height/4);
+			screenCtx.fillText("You were the monster", Game.screen.width/2, Game.screen.height/4);
 			screenCtx.fillText("Refresh to play again", Game.screen.width/2, Game.screen.height*3/4)
 		}
 	}
