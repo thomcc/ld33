@@ -19,6 +19,9 @@ var Assets = {
 		}),
 		mdie: new Howl({
 			src: ['res/mdie.wav']
+		}),
+		boom: new Howl({
+			src: ['res/boom.wav']
 		})
 	},
 	music: new Howl({
@@ -52,8 +55,8 @@ ImageAsset.prototype.getCardinalRotations = function(sw, sh) {
 			canv.width = this.width;
 			canv.height = this.height;
 			var ctx = canv.getContext('2d');
-			var r = Math.floor(this.width/sw);
-			var c = Math.floor(this.height/sh);
+			var c = Math.floor(this.width/sw);
+			var r = Math.floor(this.height/sh);
 			for (var y = 0; y < r; ++y) {
 				for (var x = 0; x < c; ++x) {
 					ctx.save();
@@ -115,7 +118,8 @@ Assets.loadAll = function() {
 		loadImage('eye', 'res/eye.png'),
 		loadImage('misc', 'res/misc.png'),
 		loadImage('copter', 'res/copter.png'),
-		loadImage('tiles', 'res/tiles-only.png')
+		loadImage('tiles', 'res/tiles-only.png'),
+		loadImage('backdrop', 'res/backdrop.png')
 	]);
 }
 

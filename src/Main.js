@@ -435,6 +435,20 @@ Movable.doMove = function() {
 	}
 };
 
+Movable.knockBack = function(x, y) {
+	this.vx += (x - this.vx)*2/5;
+	this.vy += (y - this.vy)*2/5;
+};
+
+Movable.blockCheck = function(x, y) {
+	return (
+		this.game.isBlocked(x-this.rx, y-this.ry) ||
+		this.game.isBlocked(x-this.rx, y+this.ry) ||
+		this.game.isBlocked(x+this.rx, y-this.ry) ||
+		this.game.isBlocked(x+this.rx, y+this.ry)
+	);
+};
+
 Movable._move = function(dx, dy) {
 	if (!this.active) {
 		return;
@@ -442,16 +456,7 @@ Movable._move = function(dx, dy) {
 	var nx = this.x+dx;
 	var ny = this.y+dy;
 	// hm....
-	if (this.game.isBlocked(nx-this.rx, ny-this.ry) ||
-		this.game.isBlocked(nx-this.rx, ny+this.ry) ||
-		this.game.isBlocked(nx-this.rx, ny) ||
-		this.game.isBlocked(nx+this.rx, ny-this.ry) ||
-		this.game.isBlocked(nx+this.rx, ny+this.ry) ||
-		this.game.isBlocked(nx+this.rx, ny) ||
-		this.game.isBlocked(nx, ny-this.ry) ||
-		this.game.isBlocked(nx, ny+this.ry) ||
-		this.game.isBlocked(nx, ny))
-	{
+	if (this.blockCheck(nx, ny)) {
 		this.collide(dx, dy);
 	}
 	else {
@@ -738,6 +743,7 @@ Monster.prototype.hurtFor = function(amt) {
 		this.hitTimer--;
 		return;
 	}
+	this.game.camera.screenShake(Math.ceil(amt/2));
 	NaNCheck(amt);
 	this.hitTimer = 20;
 	this.hp -= amt;
@@ -762,6 +768,21 @@ Monster.prototype.die = function() {
 	for (var i = 0; i < this.tentacles.length; ++i) {
 		this.tentacles[i].gibify(this.game);
 	}
+};
+
+//
+Monster.prototype.blockCheck = function(x, y) {
+	return (
+		this.game.isBlocked(x-this.rx, y-this.ry) ||
+		this.game.isBlocked(x-this.rx, y+this.ry) ||
+		this.game.isBlocked(x-this.rx, y) ||
+		this.game.isBlocked(x+this.rx, y-this.ry) ||
+		this.game.isBlocked(x+this.rx, y+this.ry) ||
+		this.game.isBlocked(x+this.rx, y) ||
+		this.game.isBlocked(x, y-this.ry) ||
+		this.game.isBlocked(x, y+this.ry) ||
+		this.game.isBlocked(x, y)
+	);
 };
 
 Monster.prototype.setPosition = function(x, y) {
@@ -813,6 +834,12 @@ Monster.prototype.update = function() {
 	}
 	if (this.hitTimer > 0) {
 		--this.hitTimer;
+	}
+
+	else {
+		if (this.hp < this.maxHp) {
+			this.hp += 0.05;
+		}
 	}
 	this.move();
 	for (var i = 0; i < this.tentacles.length; ++i) {
@@ -867,31 +894,6 @@ Monster.prototype.collide = function(dx, dy) {
 	if (dx !== 0) this.vx = 0;
 	if (dy !== 0) this.vy = 0;
 };
-/*
-Monster.prototype.canMove = function(dx, dy) {
-	var x = (this.x);
-	var y = (this.y);
-
-	var left = (x - this.width/2);
-	var right = (x + this.width/2);
-
-	var top = (y - this.height/2);
-	var bottom = (y + this.height/2)-1; // @TODO: bottom pixel in height is blank...
-
-	var newLeft = Math.floor(left+dx);
-	var newRight = Math.floor(right+dx);
-	var newTop = Math.floor(top+dy);
-	var newBottom = Math.floor(bottom+dy);
-
-	if (this.game.isBlocked(newLeft, newTop)) return false;
-	if (this.game.isBlocked(newLeft, newBottom)) return false;
-
-	if (this.game.isBlocked(newRight, newTop)) return false;
-	if (this.game.isBlocked(newRight, newBottom)) return false;
-
-	return true;
-
-};*/
 
 Monster.prototype.spriteX = function() {
 	var sizeData = Monster.SizeData[this.size]
@@ -1093,6 +1095,14 @@ Camera.prototype.update = function() {
 
 };
 
+Camera.prototype.isInView = function(l, r, t, b) {
+	return !(r < this.minX || l > this.maxX || b < this.minY || t > this.maxY);
+};
+
+Camera.prototype.canSee = function(ent) {
+	return this.isInView(ent.x-ent.rx, ent.x+ent.rx, ent.y-ent.ry, ent.y+ent.ry);
+};
+
 Camera.prototype.setPosition = function(nx, ny) {
 	this.x = clamp(nx, this.width/2, this.xBound-this.width/2);
 	this.y = clamp(ny, this.height/2, this.yBound-this.height/2);
@@ -1129,9 +1139,6 @@ Camera.prototype.setPosition = function(nx, ny) {
 };
 
 Engine.Camera = Camera;
-
-
-
 
 function Tile(type) {
 	this.type = type;
@@ -1261,12 +1268,17 @@ function Game() {
 Engine.Game = Game;
 
 Game.prototype.addEffect = function(e) {
-	this.effects.push(e);
+	if (this.camera.canSee(e)) {
+		this.effects.push(e);
+	}
 };
 
-Game.prototype.updateArray = function(arr) {
+Game.prototype.updateArray = function(arr, isEffects) {
 	for (var i = 0; i < arr.length; ++i) {
 		arr[i].update();
+		if (isEffects && !this.camera.canSee(arr[i])) {
+			arr[i].active = false;
+		}
 	}
 
 	var j = 0;
@@ -1278,19 +1290,21 @@ Game.prototype.updateArray = function(arr) {
 	arr.length = j;
 };
 
+Game.prototype.addSmoke = function(x, y) {
+	var numClouds = Math.ceil(Math.random()*3);
+	for (var i = 0; i < numClouds; ++i) {
+		var ox = Math.round(Math.random()-0.5)*8;
+		var oy = Math.round(Math.random()-0.5)*8;
+		this.addEffect(new Smoke(this, x+ox, y+oy));
+	}
+}
+
 Game.prototype.update = function() {
 	this.player.update();
 
-	this.updateArray(this.effects);
-	this.updateArray(this.entities);
-	/*
-	if (Math.random() < 0.05) {
-		var x = 25*TileSize;
-		var y = 25*TileSize;
-		var dx = this.player.x - x;
-		var dy = this.player.y - y;
-		this.addEntity(new Bullet(this, {x: x, y: y}, dx, dy));
-	}*/
+	this.updateArray(this.effects, true);
+	this.updateArray(this.entities, false);
+
 	this.camera.update();
 };
 
@@ -1368,8 +1382,56 @@ Game.prototype.tentacleTouched = function(x, y, rw, rh) {
 		}
 	}
 	return false;
+};
+
+Game.prototype.explosionCheck = function(e, x, y, dmg, r) {
+	var dx = e.x - x;
+	var dy = e.y - y;
+	if (dx*dx + dy*dy < r*r) {
+		var len = Math.sqrt(dx*dx+dy*dy);
+		dx /= len;
+		dy /= len;
+		len /= r;
+		var falloff = (1.0 - len)/2 + 0.5;
+		falloff /= 2;
+		e.hurtFor(Math.max(Math.floor(dmg*falloff), 1));
+		e.vx += dx * 5 * (1 - len);
+		e.vy += dy * 5 * (1 - len);
+		// if (e === this.player) {
+		// 	var gibs = 4 + (Math.random()*3)|0
+		// 	for (var i = 0; i < gibs; ++i) {
+		// 		var ox = (Math.random() - 0.5)*this.player.rx;
+		// 		var oy = (Math.random() - 0.5)*this.player.ry;
+		// 		var gib = new Gib(this, e.x+ox, e.y+oy, true);
+		// 		gib.vx *= 0.1;
+		// 		gib.vy *= 0.1;
+		// 		gib.vx += dx * 5 * (1 - len);
+		// 		gib.vy += dx * 5 * (1 - len);
+		// 		this.addEffect(gib);
+		// 	}
+		// }
+	}
 }
 
+Game.prototype.explode = function(x, y, dmg, radius) {
+	if (dmg == null) {
+		dmg = 10;
+	}
+	if (radius == null) {
+		radius = 24;
+	}
+
+	for (var i = 0; i < this.entities.length; ++i) {
+		var e = this.entities[i];
+		if (!e.active) {
+			continue;
+		}
+		if (e instanceof Copter) {
+			this.explosionCheck(e, x, y, dmg, radius);
+		}
+	}
+	this.addEffect(new Explosion(this, x, y))
+};
 
 Game.prototype.render = function(ctx, canvas) {
 
@@ -1380,11 +1442,27 @@ Game.prototype.render = function(ctx, canvas) {
 
 	var cardinalRotations = Assets.images.tiles.getCardinalRotations(TileSize, TileSize);
 
-
 	Input.setBounds(minX, minY);
 
 	var iMinX = Math.round(minX);
 	var iMinY = Math.round(minY);
+
+	var parallaxX = minX / 5;
+	var parallaxY = minY / 5;
+	var backdropSize = 128;
+
+	var backdropsX = 2+Math.floor(this.camera.width/backdropSize);
+	var backdropsY = 2+Math.floor(this.camera.height/backdropSize);
+	ctx.clearRect(0, 0, canvas.width, canvas.height);
+	for (var by = 0; by < backdropsY; ++by) {
+		for (var bx = 0; bx < backdropsX; ++bx) {
+			ctx.drawImage(
+				Assets.images.backdrop.image,
+				bx*backdropSize-parallaxX,
+				by*backdropSize-parallaxY);
+		}
+	}
+
 
 	var minTileX = Math.floor(minX / TileSize)-1;
 	var minTileY = Math.floor(minY / TileSize)-1;
@@ -1392,9 +1470,9 @@ Game.prototype.render = function(ctx, canvas) {
 	var maxTileX = Math.ceil(maxX / TileSize)+1;
 	var maxTileY = Math.ceil(maxY / TileSize)+1;
 
-	ctx.fillStyle = '#43596d';
-	ctx.fillRect(0, 0, canvas.width, canvas.height);
-	// ctx.strokeStyle = 'green';
+	//ctx.fillStyle = '#43596d';
+	//ctx.fillRect(0, 0, canvas.width, canvas.height);
+
 
 	for (var tileY = minTileY; tileY <= maxTileY; ++tileY) {
 		for (var tileX = minTileX; tileX <= maxTileX; ++tileX) {
@@ -1404,44 +1482,15 @@ Game.prototype.render = function(ctx, canvas) {
 			}
 			var tileSpriteX = tile.sprite + (tile.type-1)*4;
 			var tileSpriteY = tile.variant;
-			ctx.drawImage(
-					cardinalRotations[tile.rotation],
-					tileSpriteX*TileSize,
-					tileSpriteY*TileSize,
-					TileSize, TileSize,
-					tileX * TileSize - iMinX,
-					tileY * TileSize - iMinY,
-					TileSize,
-					TileSize);
-			// @TODO: see if this has a lot of overhead, and blit pixels manually if it does...
-			/*ctx.save();
-			{
-				//ctx.translate(tileX * TileSize - iMinX + TileSize/2, tileY * TileSize - iMinY + TileSize/2);
-				//ctx.rotate(tile.rotation*Math.PI/2);
-				ctx.drawImage(Assets.images.tiles.image,
-					tileSpriteX*TileSize, tileSpriteY*TileSize,
-					TileSize, TileSize,
-					-TileSize/2, -TileSize/2,
-					TileSize, TileSize)
-			}
-			*/ctx.restore();
-
-
-
-			// switch (tile) {
-			// case -1:
-			// 	ctx.fillStyle = 'rgb(128, 128, 128)';
-			// 	break;
-			// case 0:
-			// 	continue;
-			// case 1:
-			// 	ctx.fillStyle = 'black';
-			// 	break;
-			// default:
-			// 	console.log("unhandled tile: "+tile);
-			// }
-			// ctx.fillRect(tileX * TileSize - iMinX, tileY * TileSize - iMinY, TileSize, TileSize);
-			// ctx.strokeRect(tileX * TileSize - iMinX+0.5, tileY * TileSize - iMinY+0.5, TileSize-1, TileSize-1)
+			ctx.drawImage(cardinalRotations[tile.rotation],
+				tileSpriteX*TileSize,
+				tileSpriteY*TileSize,
+				TileSize, TileSize,
+				tileX * TileSize - iMinX,
+				tileY * TileSize - iMinY,
+				TileSize,
+				TileSize
+			);
 		}
 	}
 
@@ -1553,12 +1602,9 @@ Game.prototype.render = function(ctx, canvas) {
 	this.effectBuffer.reset();
 
 	for (var fxi = 0; fxi < this.effects.length; ++fxi) {
-		// var fx = this.effects[fxi];
-		// var fxx = fx.x-minX;
-		// var fxy = fx.y-minY;
-		// if (fxx)
-		// if (fx.x - minX < 0 || fx.x - )
-		this.effects[fxi].render(ctx, minX, minY, this.effectBuffer);
+		if (this.camera.canSee(this.effects[fxi])) {
+			this.effects[fxi].render(ctx, minX, minY, this.effectBuffer);
+		}
 	}
 
 	for (var ei = 0; ei < this.entities.length; ++ei) {
@@ -1588,7 +1634,6 @@ function Particle(game, x, y) {
 	this.bounce = 0.6;
 	this.gravity = 0.08;
 	this.drag = 0.998;
-
 	do {
 		this.vx = (Math.random() - 0.5) * 2.0;
 		this.vy = (Math.random() - 0.5) * 2.0;
@@ -1596,13 +1641,18 @@ function Particle(game, x, y) {
 
 	var size = Math.sqrt(this.vx*this.vx+this.vy*this.vy);
 	var speed = 1.0;
-	var xSpeed = 1.0;
-	var ySpeed = 2.0;
+
+	var xSpeed = this.initialVxMul;
+	var ySpeed = this.initialVyMul;
+
 	this.vx = this.vx/size*xSpeed;
 	this.vy = this.vy/size*ySpeed;
 
 	this.sprite = -1;
 }
+
+Particle.prototype.initialVxMul = 1.0;
+Particle.prototype.initialVyMul = 2.0;
 
 Engine.Particle = Particle;
 
@@ -1649,7 +1699,6 @@ Particle.prototype.render = function(c, sx, sy) {
 	}
 };
 
-
 function Blood(game, x, y) {
 	Particle.call(this, game, x, y);
 	this.rx = this.ry = 0.5;
@@ -1657,17 +1706,14 @@ function Blood(game, x, y) {
 	this.sprite = -1;
 	this.drag = 0.96;
 	this.bounce = 0.1;
-
 }
 
 Blood.prototype = Object.create(Particle.prototype);
 Blood.prototype.constructor = Blood;
-
-// Blood.prototype.getColor = function() {
-	// return 'rgb(160, 0, 0)';
-// };
-
 Engine.Blood = Blood;
+Blood.prototype.blockCheck = function(x, y) {
+	return this.game.isBlocked(x, y);
+};
 
 Blood.prototype.render = function(c, sx, sy, pix) {
 	var px = Math.round(this.x - sx);
@@ -1696,6 +1742,106 @@ Gib.prototype.update = function() {
 };
 
 
+
+function Smoke(game, x, y) {
+	Particle.apply(this, arguments);
+	this.gravity = -0.05;
+	this.life >>= 1;
+	this.age = this.life;
+	this.drag = 0.9;
+}
+
+Smoke.prototype = Object.create(Particle.prototype);
+Smoke.prototype.constructor = Smoke;
+Engine.Smoke = Smoke;
+
+//Smoke.prototype.initialVxMul = 0;
+Smoke.prototype.initialVyMul = 0;
+
+Smoke.prototype.render = function(c, sx, sy, pixbuf) {
+	var px = Math.round(this.x - sx);
+	var py = Math.round(this.y - sy);
+	var shade = Math.floor(127 * this.life / this.age);
+	var color = 0xff000000|(shade<<16)|(shade<<8)|shade;
+	for (var y = -1; y < 1; ++y) {
+		for (var x = -1; x < 1; ++x) {
+			pixbuf.putPixel(px+x, py+y, color);
+		}
+	}
+};
+function Flame(game, x, y) {
+	Particle.apply(this, arguments);
+	this.gravity = 0;
+	this.life >>= 1;
+	this.age = this.life;
+	this.drag = 0.92;
+	this.emitSmoke = true;
+}
+Flame.prototype = Object.create(Particle.prototype);
+Flame.prototype.constructor = Flame;
+Engine.Flame = Flame;
+
+Flame.prototype.initialVyMul = 1.0;
+Flame.prototype.render = function() {
+	this.sprite = 8 + Math.floor(4 * this.life / this.age);
+	Particle.prototype.render.apply(this, arguments);
+};
+
+Flame.prototype.update = function() {
+	Particle.prototype.update.apply(this);
+	if (!this.active && Math.random() < 0.2 && !this.emitSmoke) {
+		var numSmokes = Math.ceil(Math.random() * 3);
+		for (var i = 0; i < numSmokes; ++i) {
+			var s = new Smoke(this.game, this.x+(Math.random()-0.5)*4, this.y+(Math.random()-0.5)*4);
+			s.vx = s.vx/10 + this.vx;
+			s.vy = s.vy/10 + this.vy;
+			this.game.addEffect(s);
+		}
+	}
+};
+
+function Explosion(game, x, y) {
+	Particle.apply(this, arguments);
+	this.vx = 0;
+	this.vy = 0;
+
+	this.life = this.age = 5;
+	Assets.sounds.boom.play();
+}
+Explosion.prototype = Object.create(Particle.prototype);
+Explosion.prototype.constructor = Explosion;
+Engine.Explosion = Explosion;
+
+Explosion.prototype.update = function() {
+	if (--this.life < 0) {
+		this.active = false;
+		return;
+	}
+	var bits = Math.ceil(this.life * 40 / this.age);
+	var dd = (this.age - this.life)/this.age + 0.2;
+	for (var i = 0; i < bits; ++i) {
+		var dir = Math.random() * Math.PI * 2;
+		var dist = Math.random() * 6 * dd;
+		var xx = this.x + Math.cos(dir) * dist;
+		var yy = this.y + Math.sin(dir) * dist;
+		var flame = new Flame(this.game, xx, yy);
+		if (Math.random() < 0.5) {
+			flame.age >>= 1;
+			flame.life = flame.age;
+		}
+		flame.vx /= 10;
+		flame.vy /= 10;
+		flame.vx += (xx - this.x)/2.0;
+		flame.vy += (yy - this.y)/2.0;
+		flame.gravity = 0.1;
+		this.game.addEffect(flame);
+	}
+};
+
+Explosion.prototype.render = function() {};
+
+
+
 function Entity(game) {
 	this.game = game;
 	this.active = true;
@@ -1713,7 +1859,7 @@ mixin(Entity, Movable);
 
 Engine.Entity = Entity;
 
-Entity.prototype.update = function() {}
+Entity.prototype.update = function() {};
 Entity.prototype.render = function(c, mx, my) {};
 
 Entity.prototype.setPosition = function(x, y) {
@@ -1753,7 +1899,7 @@ Bullet.prototype.update = function() {
 	this.lastX = this.x;
 	this.lastY = this.y;
 	Entity.prototype.update.call(this);
-	this.doMove();
+	// this.doMove();
 	if (this.collidesWithPlayer()) {
 		this.onPlayerCollision();
 	}
@@ -1807,15 +1953,72 @@ Bullet.prototype.render = function(c, sx, sy, pix) {
 		if (Math.random() * steps < i) {
 			continue;
 		}
-		var br = (200 - i * 200 / steps)|0;
+		var br = (200 - i * 200 / steps)&0xff;
 		var xx = (px - dx * i / steps)|0;
 		var yy = (py - dy * i / steps)|0;
-		var pixel = (0x010101*br)|0xff000000;
+		var pixel = 0xff000000|(br<<16)|(br<<8)|br;
 		pix.putPixel(xx, yy, pixel);
 		//c.globalAlpha = Math.max(0, Math.min(1, 0.5 + (br/255/2)));
 		//c.fillRect(xx, yy, 1, 1);
 	}
 };
+
+function Rocket(game, shooter, dx, dy, dmg, speed) {
+	Bullet.apply(this, arguments);
+	this.rx = 4;
+	this.ry = 4;
+	// Assets.sounds.shootRocket.play();
+};
+
+Rocket.prototype = Object.create(Bullet.prototype);
+Rocket.prototype.constructor = Rocket;
+Engine.Rocket = Rocket;
+
+Rocket.prototype.update = function() {
+	var flame = new Flame(this.game, this.x-this.vx*2, this.y-this.vy*2);
+	// flame.gravity = 0.1;
+	flame.vx *= 0.1;
+	flame.vy *= 0.1;
+
+	flame.vx += this.vx;
+	flame.vy += this.vy;
+
+	flame.life = flame.age / 2;
+	this.game.addEffect(flame);
+	Bullet.prototype.update.call(this);
+	this.doMove();
+};
+
+Rocket.prototype.render = function(c, sx, sy, pix) {
+	var sprite = (Math.floor(-Math.atan2(this.vy, this.vx) * 16 / (Math.PI*2)) + 4.5) & 7;
+	c.drawImage(Assets.images.misc.image,
+		sprite*8, 8, 8, 8,
+		Math.round(this.x-sx-4)+0.5, Math.round(this.y-sy-4)+0.5, 8, 8);
+};
+
+Rocket.prototype.collide = function() {
+	this.active = false;
+
+	this.game.explode(this.x, this.y, this.damage);
+};
+
+Rocket.prototype.onPlayerCollision = function() {
+	this.game.player.hurtFor(this.damage);
+	this.active = false;
+	var gibs = 4 + (Math.random()*3)|0
+	for (var i = 0; i < gibs; ++i) {
+		var ox = (Math.random() - 0.5)*this.game.player.rx;
+		var oy = (Math.random() - 0.5)*this.game.player.ry;
+		var gib = new Gib(this.game, this.game.player.x+ox, this.game.player.y+oy, true);
+		gib.vx *= 0.1;
+		gib.vy *= 0.1;
+		gib.vx += this.vx;
+		gib.vy += this.vy;
+		this.game.addEffect(gib);
+	}
+	this.game.explode(this.x, this.y, this.damage);
+}
+
 
 function Copter(game, x, y) {
 	Entity.call(this, game);
@@ -1826,6 +2029,7 @@ function Copter(game, x, y) {
 	this.drag = 0.9;
 	this.hit = 0;
 	this.rx = this.ry = 8;
+	this.bob = (Math.random() * 40)|0;
 	this.sprite = (Math.random()*8)|0;
 }
 
@@ -1839,9 +2043,11 @@ Copter.prototype.die = function() {
 	for (var i = 0; i < 3; ++i) {
 		this.game.addEffect(new Gib(this.game, this.x, this.y, false));
 	}
-}
+	this.game.explode(this.x, this.y, 10);
+	// this.game.addEffect(new Explosion(this.game, this.x, this.y));
+};
 
-Copter.prototype.hurt = function(dmg) {
+Copter.prototype.hurtFor = function(dmg) {
 	this.timer.set('hit', 5);
 	this.hp -= dmg;
 	if (this.hp <= 0) {
@@ -1856,26 +2062,40 @@ Copter.prototype.hurt = function(dmg) {
 };
 
 Copter.prototype.overlapsPlayer = function() {
-	return false;
+	// @HACK
+	return (
+		distBetween(this.x, this.y, this.game.player.x, this.game.player.y) <
+		Math.min(this.rx+this.game.player.rx, this.ry+this.game.player.ry)
+	);
 };
+
+Copter.bobRate = 8;
+Copter.bobAmplitude = 0.1;
 Copter.prototype.update = function() {
 	Entity.prototype.update.call(this);
 	this.sprite++;
+	this.bob++;
+
 	if (this.hit > 0) {
 		--this.hit;
 	}
 
+	if (Math.random() < 0.01) {
+		this.game.addSmoke(this.x, this.y-this.ry);
+	}
+
+
 	this.timer.update();
 	var distToPlayer = distBetween(this.x, this.y, this.game.player.x, this.game.player.y);
 	if (this.overlapsPlayer()) {
-		this.explode();
+		this.hurtFor(100);
 	}
 	else if (distToPlayer < 100) {
 		if (this.timer.test('hit')) {
 			if (this.game.tentacleTouched(this.x, this.y, this.rx, this.ry)) {
 				// this.timer.set('hit', 5);
 				this.hit = 5;
-				this.hurt(1);
+				this.hurtFor(1);
 			}
 		}
 
@@ -1888,18 +2108,19 @@ Copter.prototype.update = function() {
 			dx += (Math.random()-0.5) / 10;
 			dy += (Math.random()-0.5) / 10;
 			len = normLen(dx, dy);
-			this.game.addEntity(new Bullet(this.game, this, dx/len, dy/len, 6 + (Math.random() * 3)|0, 4));
+			// this.game.addEntity(new Bullet(this.game, this, dx/len, dy/len, 6 + (Math.random() * 3)|0, 4));
+			this.game.addEntity(new Rocket(this.game, this, dx/len, dy/len, 20 + (Math.random() * 3)|0, 4));
 		}
 
-		if (distToPlayer < 50 && this.timer.test('dart')) {
-			this.timer.set('dodge', 30);
+		if (distToPlayer < 50 && this.timer.testOrSet('dart', 40)) {
+			// this.timer.set('dodge', 30);
 			var dx = this.x - this.game.player.x;
 			var dy = this.y - this.game.player.y;
 			var len = normLen(dx, dy);
 			dx /= len;
 			dy /= len;
-			this.vx += dx*5;
-			this.vy += dy*5;
+			this.vx += dx*4;
+			this.vy += dy*4;
 		}
 
 	}
@@ -1923,26 +2144,28 @@ Copter.prototype.update = function() {
 
 		if (this.timer.testOrSet('dart', 40)) {
 			var dx, dy;
+			var i = 0;
 			do {
+
 				dx = Math.random()*2-1;
 				dy = Math.random()*2-1;
 				var len = normLen(dx, dy);
 				dx /= len;
 				dy /= len;
-			} while (this.game.isBlocked(this.x+dx, this.y+dy) ||
-			         this.game.isBlocked(this.x+dx*TileSize, this.y+dy*TileSize));
+			} while (i++ < 10 &&
+				(this.game.isBlocked(this.x+dx, this.y+dy) ||
+			     this.game.isBlocked(this.x+dx*TileSize, this.y+dy*TileSize)));
 			this.vx += dx*5;
 			this.vy += dy*5;
 		}
 	}
+	this.vy += Math.sin(this.bob/Copter.bobRate)*Copter.bobAmplitude;
 
 	this.vx *= this.drag;
 	this.vy *= this.drag;
 
 	this.doMove();
-
-
-}
+};
 
 Copter.prototype.render = function(c, sx, sy, pix) {
 	var px = Math.round(this.x - sx);
@@ -1960,22 +2183,7 @@ Copter.prototype.render = function(c, sx, sy, pix) {
 		Assets.images.copter.image,
 		spriteX*16, spriteY*16, 16, 16,
 		px-8, py-8, 16, 16);
-
-
-
-
 }
-
-
-
-function Guy(game) {
-	Entity.call(this, game);
-
-}
-
-Engine.Guy = Guy;
-
-Guy.prototype = Object.create(Entity.prototype);
 
 
 
@@ -1999,24 +2207,6 @@ Engine.update = function() {
 		Engine.game.update();
 	}
 
-	/*
-
-	var ctx = Engine.drawCanvas.getContext('2d');
-	ctx.imageSmoothingEnabled = false;
-	ctx.mozImageSmoothingEnabled = false;
-	ctx.webkitImageSmoothingEnabled = false;
-	ctx.fillStyle = 'white';
-	ctx.fillRect(0, 0, Engine.drawCanvas.width, Engine.drawCanvas.height);
-
-	var mx = Input.mouse.x;
-	var my = Input.mouse.y;
-	if (Input.mouse.button.down) {
-		ctx.fillStyle = 'red';
-	}
-	else {
-		ctx.fillStyle = 'green';
-	}
-	ctx.fillRect(Math.floor(mx-10), Math.floor(my-10), 20, 20);*/
 };
 
 Engine.render = function() {
