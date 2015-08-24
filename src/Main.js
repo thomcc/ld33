@@ -38,7 +38,7 @@ Engine.paused = false;
 Engine.devicePixels = (window.devicePixelRatio || window.webkitDevicePixelRatio || 1.0);
 
 Engine.drawCanvas = null;
-Engine.scale = 4;
+Engine.scale = 3;
 
 Engine.now = (function() {
 	if (window.performance && window.performance.now) {
@@ -336,6 +336,14 @@ Engine.unpause = function() {
 	}
 };
 
+function mixin(type, mixin) {
+	Object.keys(mixin).forEach(function(k) {
+		type.prototype[k] = mixin[k];
+	});
+	return type;
+}
+
+
 function lerp(a, b, t) {
 	return (1.0-t)*a + b*t;
 }
@@ -384,7 +392,7 @@ function bresenham(x0, y0, x1, y1, pixelData, color) {
 	else if (x1 < 0 || x1 >= width || y1 < 0 && y1 >= height) {
 		// technically not correct to do this but we don't care
 		// about lines that start and end off screen
-		console.warn("bresenham entirely off screen")
+		// console.warn("bresenham entirely off screen")
 		return;
 	}
 	while (true) {
@@ -411,7 +419,50 @@ function bresenham(x0, y0, x1, y1, pixelData, color) {
 	}
 }
 
-var TileSize = 10;
+var TileSize = 12;
+
+
+
+var Movable = {};
+
+Engine.Movable = Movable;
+
+Movable.doMove = function() {
+	var s = Math.ceil(Math.sqrt(this.vx*this.vx+this.vy*this.vy));
+	for (var i = 0; i < s; ++i)	{
+		this._move(this.vx/s, 0);
+		this._move(0, this.vy/s);
+	}
+};
+
+Movable._move = function(dx, dy) {
+	if (!this.active) {
+		return;
+	}
+	var nx = this.x+dx;
+	var ny = this.y+dy;
+	// hm....
+	if (this.game.isBlocked(nx-this.rx, ny-this.ry) ||
+		this.game.isBlocked(nx-this.rx, ny+this.ry) ||
+		this.game.isBlocked(nx-this.rx, ny) ||
+		this.game.isBlocked(nx+this.rx, ny-this.ry) ||
+		this.game.isBlocked(nx+this.rx, ny+this.ry) ||
+		this.game.isBlocked(nx+this.rx, ny) ||
+		this.game.isBlocked(nx, ny-this.ry) ||
+		this.game.isBlocked(nx, ny+this.ry) ||
+		this.game.isBlocked(nx, ny))
+	{
+		this.collide(dx, dy);
+	}
+	else {
+		this.x = nx;
+		this.y = ny;
+	}
+};
+
+Movable.collide = function(dx, dy) {
+};
+
 
 // tentacles are stored as an array of structs of
 // {x, y, velX, velY, oldX, oldY}
@@ -430,15 +481,15 @@ function Tentacle(numPoints, ox, oy, parent) {
 	this.numPoints = numPoints;
 	this.data = new Float32Array(numPoints*SEG_SIZE);
 	// {x, y, vx, vy, ox, oy, nx, ny, angle}
-	this.drag = Math.random()*0.2 + 0.7;
+	this.drag = Math.random()*0.2 + 0.75;
 	this.drift = (Math.random() - 0.5)/100
-	this.nodeDistance = Math.random() * 0.8 + 1.0;
+	this.segLength = Math.random() * 0.8 + 1.0;
 }
 
 Tentacle.spacing = 5;
 Tentacle.size = 1;
 Tentacle.globalDrag = 0.02;
-Tentacle.gravity = 0.05;
+Tentacle.gravity = 0.1;
 
 Tentacle.prototype.update = function(x, y) {
 	if (Math.random() < 0.01) {
@@ -455,18 +506,11 @@ Tentacle.prototype.update = function(x, y) {
 
 	var mx = Input.mouse.worldX;
 	var my = Input.mouse.worldY;
-	var mouseDeltaX = mx - this.parent.x;
-	var mouseDeltaY = my - this.parent.y;
-	if (Input.mouse.button.down) {
-		mouseDeltaX /= Engine.screenWidth/Engine.scale;
-		mouseDeltaY /= Engine.screenHeight/Engine.scale;
-		mouseDeltaX *= 2;
-		mouseDeltaY *= 2;
-	}
-	else {
-		mouseDeltaX = 0;
-		mouseDeltaY = 0;
-	}
+	var parentX = this.parent.x;
+	var parentY = this.parent.y;
+
+	var mxScale = 0;
+	var myScale = 0;
 
 	var prevX = this.data[SEG_X];
 	var prevY = this.data[SEG_Y];
@@ -476,14 +520,18 @@ Tentacle.prototype.update = function(x, y) {
 	var drag = this.drag * (1.0 - Tentacle.globalDrag);
 	var size = Tentacle.size;
 	if (Input.mouse.button.down) {
-		size *= 1.5
+		mxScale = 2.0/(Engine.screenWidth/Engine.scale);
+		myScale = 2.0/(Engine.screenHeight/Engine.scale);
+		size *= 2.0
 	}
-	size *= this.nodeDistance;
+	size *= this.segLength;
 
 	// var px = Input.mouse.button;
 
 	// @FIXME: should be using deltaTime...
+	var i = 0;
 	for (var segIdx = SEG_SIZE, end = data.length; segIdx < end; segIdx += SEG_SIZE) {
+		++i;
 		data[segIdx+SEG_X] += data[segIdx+SEG_VX];
 		data[segIdx+SEG_Y] += data[segIdx+SEG_VY];
 
@@ -498,11 +546,15 @@ Tentacle.prototype.update = function(x, y) {
 		var px = segX + Math.cos(da) * size;
 		var py = segY + Math.sin(da) * size;
 
+		var mdx = (mx - ((i&1) ? segX : parentX)+(Math.random()-0.5)*15) * mxScale;
+		var mdy = (my - ((i&1) ? segY : parentY)+(Math.random()-0.5)*15) * myScale;
+
 		segX = data[segIdx+SEG_X] = prevX - (px - segX);
 		segY = data[segIdx+SEG_Y] = prevY - (py - segY);
 
-		data[segIdx+SEG_VX] = (segX - data[segIdx+SEG_OLD_X])*drag - drift + mouseDeltaX;
-		data[segIdx+SEG_VY] = (segY - data[segIdx+SEG_OLD_Y])*drag + Tentacle.gravity + mouseDeltaY;
+
+		data[segIdx+SEG_VX] = (segX - data[segIdx+SEG_OLD_X])*drag - drift + mdx;
+		data[segIdx+SEG_VY] = (segY - data[segIdx+SEG_OLD_Y])*drag + Tentacle.gravity + mdy;
 
 		data[segIdx+SEG_OLD_X] = segX;
 		data[segIdx+SEG_OLD_Y] = segY;
@@ -602,11 +654,14 @@ function Monster(game) {
 
 	this.hp = 100;
 	this.maxHp = 100;
+	this.active = true;
 
 	this.deathTimer = 0;
 
 	this.x = 0;
 	this.y = 0;
+	this.rx = 0
+	this.ry = 0;
 
 	this.hitTimer = 0;
 
@@ -616,6 +671,8 @@ function Monster(game) {
 	this.game = game;
 	this.invincibleTimer = 0;
 }
+
+mixin(Monster, Movable);
 
 Monster.SizeData = [
 	{
@@ -719,7 +776,9 @@ Monster.prototype.setSize = function(l) {
 	this.size = l;
 	var sizeData = Monster.SizeData[l];
 	this.width = Monster.SizeData[l].sprites.width;
+	this.rx = this.width/2;
 	this.height = Monster.SizeData[l].sprites.height;
+	this.ry = this.height/2;
 
 	this.sprite = 0;
 	this.tentacles.length = 0;
@@ -762,132 +821,53 @@ Monster.prototype.update = function() {
 	}
 };
 
-Monster.speed = 300;
-Monster.jumpPower = 4000;
-Monster.drag = 2.5;
-Monster.gravity = 100;
+Monster.speed = 1/10;
+Monster.drag = 0.98;
 
 Monster.prototype.move = function() {
 	var ddx = 0;
 	var ddy = 0;
-	if (this.hitTimer === 0) {
+	//if (this.hitTimer === 0)
+	{
 		if (Input.keys.left.down) {
 			ddx--;
 		}
 		if (Input.keys.right.down) {
 			ddx++;
 		}
+		if (Input.keys.down.down) {
+			ddy++;
+		}
+		if (Input.keys.up.down) {
+			ddy--;
+		}
 
-		// if (Input.keys.down.down) {
-			// ddy++;
-		// }
 	}
 
-	var ddy = 0;
-	if (Input.keys.up.pressed) {
-		ddy--;
-	}
+	// var ddy = 0;
+	// if (Input.keys.up.pressed) {
+	// 	ddy--;
+	// }
 
 
 	ddx *= Monster.speed;
-	ddy *= Monster.jumpPower;
+	ddy *= Monster.speed;// Monster.jumpPower;
 
-	ddy += Monster.gravity; // gravity
+	//ddy += Monster.gravity; // gravity
+	this.vx += ddx;
+	this.vy += ddy;
+	this.vx *= Monster.drag;
+	this.vy *= Monster.drag;
 
-	var dragX = -Monster.drag * this.vx;
-	var dragY = -Monster.drag * this.vy;
+	this.doMove();
 
-	ddx += dragX;
-	//ddy += dragY;
-
-	var oldX = this.x;
-	var oldY = this.y;
-
-	var oldVx = this.vx;
-	var oldVy = this.vy;
-
-	var newX = this.x + this.vx*Engine.deltaTime + ddx * Engine.deltaTime * Engine.deltaTime * 0.5;
-	var newY = this.y + this.vy*Engine.deltaTime + ddy * Engine.deltaTime * Engine.deltaTime * 0.5;
-
-	var newVx = this.vx + ddx*Engine.deltaTime;
-	var newVy = this.vy + ddy*Engine.deltaTime;
-
-	var hitSide = false;
-
-	// x motion
-	{
-		var moveDx = newX - oldX;
-		var moveSx = moveDx < 0 ? -1 : 1;
-		var blockedX = false;
-		var xSteps = Math.ceil(Math.abs(moveDx));
-		moveSx /= 4;
-		xSteps *= 4;
-		// var xLeft = moveDx;
-		for (var px = 0; px < xSteps; ++px) {
-			var dmx = moveSx;//Math.abs(xLeft) < Math.abs(moveSx) ? xLeft : moveSx;
-			if (this.canMove(dmx, 0)) {
-				this.x += dmx;
-				// xLeft -= dmx;
-			}
-			else {
-				// var forceX = -this.vx/Engine.deltaTime * 4;
-				// this.x += forceX*Engine.deltaTime*Engine.deltaTime/2;
-				// this.vx += forceX*Engine.deltaTime;
-
-				this.vx = -moveSx*Math.abs(this.vx);
-				// this.vx = 0;
-				blockedX = true;
-				break;
-			}
-		}
-
-
-		if (!blockedX) {
-			this.x = newX;
-			this.vx = newVx;
-		}
-		else {
-			hitSide = true;
-		}
-	}
-
-	// y motion
-	{
-		var moveDy = newY - oldY;
-		var moveSy = moveDy < 0 ? -1 : 1;
-		var blockedY = false;
-		var ySteps = Math.ceil(Math.abs(moveDy));
-		moveSy /= 4;
-		ySteps *= 4;
-		// var yLeft = moveDy;
-		for (var py = 0; py < ySteps; ++py) {
-			var dmy = moveSy//Math.abs(yLeft) < Math.abs(moveSy) ? yLeft : moveSy;
-			if (this.canMove(0, dmy)) {
-				this.y += dmy;
-				// yLeft -= dmy;
-			}
-			else {
-				this.vy = -moveSy*Math.abs(this.vy);
-				blockedY = true;
-				break;
-			}
-		}
-
-
-		if (!blockedY) {
-			this.y = newY;
-			this.vy = newVy;
-		}
-		else {
-			hitSide = true;
-		}
-	}
-
-	if (hitSide && this.hitTimer === 0) {
-		this.hurtFor((5*Math.random()+5)|0);
-	}
 };
 
+Monster.prototype.collide = function(dx, dy) {
+	if (dx !== 0) this.vx = 0;
+	if (dy !== 0) this.vy = 0;
+};
+/*
 Monster.prototype.canMove = function(dx, dy) {
 	var x = (this.x);
 	var y = (this.y);
@@ -911,7 +891,7 @@ Monster.prototype.canMove = function(dx, dy) {
 
 	return true;
 
-};
+};*/
 
 Monster.prototype.spriteX = function() {
 	var sizeData = Monster.SizeData[this.size]
@@ -1040,7 +1020,6 @@ Timer.prototype.update = function(name) {
 	}
 };
 
-
 Engine.Timer = Timer;
 
 function Camera(game) {
@@ -1059,7 +1038,7 @@ function Camera(game) {
 	this.y = this.focus.y;
 }
 
-Camera.lookahead = 0.5;
+Camera.lookahead = 1.2;
 Camera.speed = 3.5;
 
 Camera.prototype.screenShake = function(amt) {
@@ -1096,8 +1075,8 @@ Camera.prototype.update = function() {
 		var frx = mwx - this.focus.x;
 		var fry = mwy - this.focus.y;
 
-		gx += frx / 2.0;
-		gy += fry / 2.0;
+		gx += frx / 3.0;
+		gy += fry / 3.0;
 	}
 	gx = clamp(gx, this.width/2, this.xBound-this.width/2);
 	gy = clamp(gy, this.height/2, this.yBound-this.height/2);
@@ -1111,19 +1090,113 @@ Camera.prototype.update = function() {
 	ny = this.y + ny*relax;
 
 	this.setPosition(nx, ny);
+
 };
 
 Camera.prototype.setPosition = function(nx, ny) {
 	this.x = clamp(nx, this.width/2, this.xBound-this.width/2);
 	this.y = clamp(ny, this.height/2, this.yBound-this.height/2);
+
 	this.minX = this.x-this.width/2;
 	this.minY = this.y-this.height/2;
+
 	this.maxX = this.minX+this.width;
 	this.maxY = this.minY+this.height;
+	// @HACK: prevent camera from not containing player...
+	if (this.focus.x - this.focus.rx < this.minX) {
+		this.minX = this.focus.x-this.focus.rx;
+		this.x = this.minX + this.width/2;
+		this.maxX = this.minX + this.width;
+	}
+
+	if (this.focus.y - this.focus.ry < this.minY) {
+		this.minY = this.focus.y-this.focus.ry;
+		this.y = this.minY + this.height/2;
+		this.maxY = this.minY + this.height;
+	}
+
+	if (this.focus.x + this.focus.rx > this.maxX) {
+		this.maxX = this.focus.x + this.focus.rx;
+		this.x = this.maxX - this.width/2;
+		this.minX = this.maxX - this.width;
+	}
+
+	if (this.focus.y + this.focus.ry > this.maxY) {
+		this.maxY = this.focus.y + this.focus.ry;
+		this.y = this.maxY - this.height/2;
+		this.minY = this.maxY - this.height;
+	}
 };
 
 Engine.Camera = Camera;
 
+
+
+
+function Tile(type) {
+	this.type = type;
+	this.sprite = (Math.random() * 4)|0;
+	this.rotation = 0;
+	this.variant = 0;
+	this.sx = 1;
+	this.sy = 1;
+}
+
+Tile.fixUpTileArray = function(tiles, columns, rows) {
+	var U = 0x1;
+	var D = 0x2;
+	var L = 0x4;
+	var R = 0x8;
+	for (var y = 0; y < rows; ++y) {
+		for (var x = 0; x < columns; ++x) {
+			var t = tiles[x+y*columns];
+
+			if (t.type === 0) {
+				continue;
+			}
+
+			var u = y === 0         ? 1 : tiles[x+(y-1)*columns].type;
+			var d = y === rows-1    ? 1 : tiles[x+(y+1)*columns].type;
+			var r = x === columns-1 ? 1 : tiles[(x+1)+y*columns].type;
+			var l = x === 0         ? 1 : tiles[(x-1)+y*columns].type;
+
+			var mask = 0;
+
+			if (u) mask |= U;
+			if (d) mask |= D;
+			if (l) mask |= L;
+			if (r) mask |= R;
+
+			switch (mask) {
+				case 0: t.rotation = Math.floor(Math.random()*4); t.variant = 5; break;
+
+				case U: t.rotation = 3; t.variant = 4; /*t.sy = Math.random() < 0 ? -1 : 1;*/ break;
+				case D: t.rotation = 1; t.variant = 4; /*t.sy = Math.random() < 0 ? -1 : 1;*/ break;
+				case L: t.rotation = 2; t.variant = 4; /*t.sx = Math.random() < 0 ? -1 : 1;*/ break;
+				case R: t.rotation = 0; t.variant = 4; /*t.sx = Math.random() < 0 ? -1 : 1;*/ break;
+
+				case U|D: t.rotation = (Math.random() < 0.5 ? 1 : 3); t.variant = 3; /*t.sx = Math.random() < 0 ? -1 : 1;*/ break;
+				case L|R: t.rotation = (Math.random() < 0.5 ? 0 : 2); t.variant = 3; /*t.sy = Math.random() < 0 ? -1 : 1;*/ break;
+
+				case U|R: t.rotation = 3; t.variant = 2; break;
+				case U|L: t.rotation = 2; t.variant = 2; break;
+				case D|R: t.rotation = 0; t.variant = 2; break;
+				case D|L: t.rotation = 1; t.variant = 2; break;
+
+				case D|L|R: t.rotation = 0; t.variant = 0; break;
+				case U|L|R: t.rotation = 2; t.variant = 0; break;
+				case U|D|R: t.rotation = 3; t.variant = 0; break;
+				case U|D|L: t.rotation = 1; t.variant = 0; break;
+
+				case U|D|L|R: t.rotation = Math.floor(Math.random()*4); t.variant = 1; break;
+
+				default: Assert(false, "unreachable"); break;
+			}
+		}
+	}
+};
+
+Engine.Tile = Tile;
 
 function Game() {
 	var tiles = Assets.images.level;
@@ -1133,7 +1206,7 @@ function Game() {
 	var pix = pixelData.pixels;
 	var length = this.columns*this.rows;
 
-	this.tiles = [];
+	this.tiles = new Array(length);
 
 	this.effects = [];
 	this.entities = [];
@@ -1144,17 +1217,28 @@ function Game() {
 		var y = Math.floor(i / this.columns);
 
 		if (pix[i] === 0xff000000) {
-			this.tiles.push(1);
+			this.tiles[i] = new Tile(1);
+		}
+		else if (pix[i] === 0xff808080) {
+			this.tiles[i] = new Tile(2);
 		}
 		else {
-			this.tiles.push(0);
+			this.tiles[i] = new Tile(0);
 			if (pix[i] === 0xffffffff) {
+				console.log("player ", x, y);
 				this.player.setPosition(x*TileSize, y*TileSize)
+			}
+			else if (pix[i] === 0xffff00ff) {
+				console.log("copter ", x, y);
+				this.addEntity(new Copter(this, x*TileSize, y*TileSize));
 			}
 		}
 	}
 
-	this.addEntity(new Copter(this, 25*TileSize, 25*TileSize));
+	Tile.fixUpTileArray(this.tiles, this.columns, this.rows)
+
+
+	// this.addEntity(new Copter(this, 25*TileSize, 25*TileSize));
 
 
 	// @TODO: this belongs in a separate renderer
@@ -1172,6 +1256,7 @@ function Game() {
 	this.entityPosFeedback = new Uint8Array(this.viewportWidth*this.viewportHeight);
 
 };
+
 
 Engine.Game = Game;
 
@@ -1218,6 +1303,13 @@ Game.prototype.isBlocked = function(x, y) {
 Game.prototype.getTile = function(x, y) {
 	if (y < 0 || y >= this.rows || x < 0 || x >= this.columns) {
 		return -1;
+	}
+	return this.tiles[x+y*this.columns].type;
+};
+
+Game.prototype.getTileInfo = function(x, y) {
+	if (y < 0 || y >= this.rows || x < 0 || x >= this.columns) {
+		return null;
 	}
 	return this.tiles[x+y*this.columns];
 };
@@ -1286,6 +1378,8 @@ Game.prototype.render = function(ctx, canvas) {
 	var minY = this.camera.minY;
 	var maxY = this.camera.maxY;
 
+	var cardinalRotations = Assets.images.tiles.getCardinalRotations(TileSize, TileSize);
+
 
 	Input.setBounds(minX, minY);
 
@@ -1304,20 +1398,49 @@ Game.prototype.render = function(ctx, canvas) {
 
 	for (var tileY = minTileY; tileY <= maxTileY; ++tileY) {
 		for (var tileX = minTileX; tileX <= maxTileX; ++tileX) {
-			var tile = this.getTile(tileX, tileY);
-			switch (tile) {
-			case -1:
-				ctx.fillStyle = 'rgb(128, 128, 128)';
-				break;
-			case 0:
+			var tile = this.getTileInfo(tileX, tileY);
+			if (tile == null || tile.type === 0) {
 				continue;
-			case 1:
-				ctx.fillStyle = 'black';
-				break;
-			default:
-				console.log("unhandled tile: "+tile);
 			}
-			ctx.fillRect(tileX * TileSize - iMinX, tileY * TileSize - iMinY, TileSize, TileSize);
+			var tileSpriteX = tile.sprite + (tile.type-1)*4;
+			var tileSpriteY = tile.variant;
+			ctx.drawImage(
+					cardinalRotations[tile.rotation],
+					tileSpriteX*TileSize,
+					tileSpriteY*TileSize,
+					TileSize, TileSize,
+					tileX * TileSize - iMinX,
+					tileY * TileSize - iMinY,
+					TileSize,
+					TileSize);
+			// @TODO: see if this has a lot of overhead, and blit pixels manually if it does...
+			/*ctx.save();
+			{
+				//ctx.translate(tileX * TileSize - iMinX + TileSize/2, tileY * TileSize - iMinY + TileSize/2);
+				//ctx.rotate(tile.rotation*Math.PI/2);
+				ctx.drawImage(Assets.images.tiles.image,
+					tileSpriteX*TileSize, tileSpriteY*TileSize,
+					TileSize, TileSize,
+					-TileSize/2, -TileSize/2,
+					TileSize, TileSize)
+			}
+			*/ctx.restore();
+
+
+
+			// switch (tile) {
+			// case -1:
+			// 	ctx.fillStyle = 'rgb(128, 128, 128)';
+			// 	break;
+			// case 0:
+			// 	continue;
+			// case 1:
+			// 	ctx.fillStyle = 'black';
+			// 	break;
+			// default:
+			// 	console.log("unhandled tile: "+tile);
+			// }
+			// ctx.fillRect(tileX * TileSize - iMinX, tileY * TileSize - iMinY, TileSize, TileSize);
 			// ctx.strokeRect(tileX * TileSize - iMinX+0.5, tileY * TileSize - iMinY+0.5, TileSize-1, TileSize-1)
 		}
 	}
@@ -1446,47 +1569,9 @@ Game.prototype.render = function(ctx, canvas) {
 	ctx.drawImage(this.effectBuffer.canvas, 0, 0);
 }
 
-var Movable = {};
-
-Engine.Movable = Movable;
-
-Movable.doMove = function() {
-	var s = Math.ceil(Math.sqrt(this.vx*this.vx+this.vy*this.vy));
-	for (var i = 0; i < s; ++i)	{
-		this._move(this.vx/s, 0);
-		this._move(0, this.vy/s);
-	}
-};
-
-Movable._move = function(dx, dy) {
-	if (!this.active) {
-		return;
-	}
-	var nx = this.x+dx;
-	var ny = this.y+dy;
-	if (this.game.isBlocked(nx-this.r, ny-this.r) ||
-		this.game.isBlocked(nx-this.r, ny+this.r) ||
-		this.game.isBlocked(nx+this.r, ny-this.r) ||
-		this.game.isBlocked(nx+this.r, ny+this.r)) {
-		this.collide(dx, dy);
-	}
-	else {
-		this.x = nx;
-		this.y = ny;
-	}
-};
-
-Movable.collide = function(dx, dy) {};
-
-function mixin(type, mixin) {
-	Object.keys(mixin).forEach(function(k) {
-		type.prototype[k] = mixin[k];
-	});
-	return type;
-}
-
 
 // @TODO: need to optimize: game chokes when a lot of blood/gibs are on screen
+// @NOTE: seems to be better since we started writing them onto the screen using pixel manipulation.
 function Particle(game, x, y) {
 	this.game = game;
 	this.active = true;
@@ -1494,7 +1579,7 @@ function Particle(game, x, y) {
 	this.x = x;
 	this.y = y;
 
-	this.r = 2;
+	this.rx = this.ry = 2;
 
 	this.vx = 0;
 	this.vy = 0;
@@ -1508,6 +1593,7 @@ function Particle(game, x, y) {
 		this.vx = (Math.random() - 0.5) * 2.0;
 		this.vy = (Math.random() - 0.5) * 2.0;
 	} while (this.vx * this.vx + this.vy * this.vy > 1);
+
 	var size = Math.sqrt(this.vx*this.vx+this.vy*this.vy);
 	var speed = 1.0;
 	var xSpeed = 1.0;
@@ -1551,7 +1637,7 @@ Particle.prototype.render = function(c, sx, sy) {
 	var py = Math.round(this.y - sy)+0.5;
 	if (this.sprite < 0) {
 		c.fillStyle = this.getColor();
-		c.fillRect(px-this.r, py-this.r, this.r*2, this.r*2);
+		c.fillRect(px-this.rx, py-this.ry, this.rx*2, this.ry*2);
 	}
 	else {
 		var sx = this.sprite % 8;
@@ -1566,7 +1652,7 @@ Particle.prototype.render = function(c, sx, sy) {
 
 function Blood(game, x, y) {
 	Particle.call(this, game, x, y);
-	this.r = 0.5;
+	this.rx = this.ry = 0.5;
 	// this.color = '#a00000';
 	this.sprite = -1;
 	this.drag = 0.96;
@@ -1620,7 +1706,7 @@ function Entity(game) {
 	this.vx = 0;
 	this.vy = 0;
 
-	this.r = 1;
+	this.rx = this.ry = 1;
 }
 
 mixin(Entity, Movable);
@@ -1635,12 +1721,10 @@ Entity.prototype.setPosition = function(x, y) {
 	this.x = x;
 };
 
-function Bullet(game, shooter, dx, dy, speed) {
+function Bullet(game, shooter, dx, dy, dmg, speed) {
 	Entity.call(this, game);
-	if (speed == null) {
-		speed = 4;
-	}
-	this.damage = Math.ceil(Math.random() * 4);
+	this.speed = speed || 4;
+	this.damage = dmg || Math.ceil(Math.random() * 4);
 	this.lastX = 0;
 	this.lastY = 0;
 	this.setPosition(shooter.x, shooter.y);
@@ -1686,10 +1770,10 @@ Bullet.prototype.collidesWithPlayer = function() {
 	var pTop = player.y - player.height/2;
 	var pBottom = player.y + player.height/2;
 
-	var tLeft = this.x - this.r;
-	var tRight = this.x + this.r;
-	var tBottom = this.y + this.r;
-	var tTop = this.y - this.r;
+	var tLeft = this.x - this.rx;
+	var tRight = this.x + this.rx;
+	var tBottom = this.y + this.ry;
+	var tTop = this.y - this.ry;
 
 	return !(
 		pLeft > tLeft || pRight < tRight ||
@@ -1737,11 +1821,12 @@ function Copter(game, x, y) {
 	Entity.call(this, game);
 	this.timer = new Timer();
 	this.setPosition(x, y);
-	this.hp = 10;
+	this.hp = 15;
 	this.gravity = 0;
 	this.drag = 0.9;
-	this.r = 8;
-	this.sprite = 0;
+	this.hit = 0;
+	this.rx = this.ry = 8;
+	this.sprite = (Math.random()*8)|0;
 }
 
 Engine.Copter = Copter;
@@ -1770,15 +1855,26 @@ Copter.prototype.hurt = function(dmg) {
 	}
 };
 
+Copter.prototype.overlapsPlayer = function() {
+	return false;
+};
 Copter.prototype.update = function() {
 	Entity.prototype.update.call(this);
-	this.sprite = (this.sprite+1) % 16;
+	this.sprite++;
+	if (this.hit > 0) {
+		--this.hit;
+	}
 
 	this.timer.update();
-	if (distBetween(this.x, this.y, this.game.player.x, this.game.player.y) < 100) {
+	var distToPlayer = distBetween(this.x, this.y, this.game.player.x, this.game.player.y);
+	if (this.overlapsPlayer()) {
+		this.explode();
+	}
+	else if (distToPlayer < 100) {
 		if (this.timer.test('hit')) {
-			if (this.game.tentacleTouched(this.x, this.y, this.r, this.r)) {
-				this.timer.set('hit', 5);
+			if (this.game.tentacleTouched(this.x, this.y, this.rx, this.ry)) {
+				// this.timer.set('hit', 5);
+				this.hit = 5;
 				this.hurt(1);
 			}
 		}
@@ -1792,10 +1888,11 @@ Copter.prototype.update = function() {
 			dx += (Math.random()-0.5) / 10;
 			dy += (Math.random()-0.5) / 10;
 			len = normLen(dx, dy);
-			this.game.addEntity(new Bullet(this.game, this, dx/len, dy/len));
+			this.game.addEntity(new Bullet(this.game, this, dx/len, dy/len, 6 + (Math.random() * 3)|0, 4));
 		}
 
-		if (this.timer.testOrSet('dart', 40)) {
+		if (distToPlayer < 50 && this.timer.test('dart')) {
+			this.timer.set('dodge', 30);
 			var dx = this.x - this.game.player.x;
 			var dy = this.y - this.game.player.y;
 			var len = normLen(dx, dy);
@@ -1806,9 +1903,25 @@ Copter.prototype.update = function() {
 		}
 
 	}
+	else if (distToPlayer < 400) {
+		if (this.timer.testOrSet('dive', 120)) {
+			var dx = this.game.player.x - this.x;
+			var dy = this.game.player.y - this.y;
+			var len = normLen(dx, dy);
+			dx /= len;
+			dy /= len;
+			dx += (Math.random()-0.5) / 10;
+			dy += (Math.random()-0.5) / 10;
+			len = normLen(dx, dy);
+			this.vx += dx / len * 5;
+			this.vy += dy / len * 5;
+
+		}
+		// this.game.addEntity(new Bullet(this.game, this, dx/len, dy/len, 4 + (Math.random() * 4)|0));
+	}
 	else {
 
-		if (this.timer.testOrSet('dart', 120)) {
+		if (this.timer.testOrSet('dart', 40)) {
 			var dx, dy;
 			do {
 				dx = Math.random()*2-1;
@@ -1834,14 +1947,15 @@ Copter.prototype.update = function() {
 Copter.prototype.render = function(c, sx, sy, pix) {
 	var px = Math.round(this.x - sx);
 	var py = Math.round(this.y - sy);
-	var isHit = !this.timer.test('hit');
-	var sprite = this.sprite >= 8 ? 8 - this.sprite : this.sprite;
+	var isHit = this.hit !== 0;//!this.timer.test('hit');
+	var sprite = pingPong(this.sprite, 7);
+	//var sprite = this.sprite >= 8 ? 7 - this.sprite : this.sprite;
 
-	if (isHit) {
-		sprite += 8;
-	}
 	var spriteX = sprite % 4;
 	var spriteY = Math.floor(sprite/4);
+	if (isHit) {
+		spriteY += 2;
+	}
 	c.drawImage(
 		Assets.images.copter.image,
 		spriteX*16, spriteY*16, 16, 16,

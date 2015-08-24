@@ -41,6 +41,35 @@ function ImageAsset(image, name) {
 	this.height = image.naturalHeight || image.height;
 	this.name = name;
 	this.pixels = null;
+	this.rotations = null;
+}
+
+ImageAsset.prototype.getCardinalRotations = function(sw, sh) {
+	if (this.rotations == null) {
+		this.rotations = [];
+		for (var i = 0; i < 4; ++i) {
+			var canv = document.createElement('canvas');
+			canv.width = this.width;
+			canv.height = this.height;
+			var ctx = canv.getContext('2d');
+			var r = Math.floor(this.width/sw);
+			var c = Math.floor(this.height/sh);
+			for (var y = 0; y < r; ++y) {
+				for (var x = 0; x < c; ++x) {
+					ctx.save();
+					ctx.translate(sw*x+sw/2, sh*y+sh/2);
+					ctx.rotate(i*Math.PI/2);
+					ctx.drawImage(
+						this.image,
+						x*sw,   y*sh, sw, sh,
+						-sw/2, -sh/2, sw, sh);
+					ctx.restore();
+				}
+			}
+			this.rotations[i] = canv;
+		}
+	}
+	return this.rotations;
 }
 
 
@@ -85,7 +114,8 @@ Assets.loadAll = function() {
 		loadImage('sprites', 'res/sprites.png'),
 		loadImage('eye', 'res/eye.png'),
 		loadImage('misc', 'res/misc.png'),
-		loadImage('copter', 'res/copter.png')
+		loadImage('copter', 'res/copter.png'),
+		loadImage('tiles', 'res/tiles-only.png')
 	]);
 }
 
