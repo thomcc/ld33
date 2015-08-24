@@ -1,17 +1,13 @@
-# LD33
+# bloody tentacles (ld33)
 
-This is my entry for Ludum Dare 33 (Jam).
+this is my entry for Ludum Dare 33 (Jam).
 
-Theme is: "You are the monster".
+theme was: "you are the monster".
 
-## TODO:
+the code is kind of messy and basically all in a single file due to the time constraints. all art and music were done by me. all code that isnt a library was done by me.
 
-- levels/changing levels
-- pickups
-- at least one ground enemy
-- some tutorialization
-- menu
-- game transitions
-- more guns, more enemies (time allowing)
-- balance (a man can dream, right?)
+## license
+
+(c) 2015 thom chiovoloni all rights reserved. you dont want to use any of it anyway, trust me.
+
 
