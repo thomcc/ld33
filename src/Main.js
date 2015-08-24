@@ -16,11 +16,10 @@ var Engine = Object.assign({}, EventEmitter.prototype);
 
 window.Engine = Engine;
 
-
 Engine.screenWidth = 900;
 Engine.screenHeight = 540;
 Engine.FPS = 60.0;
-Engine.DEBUG = window.DEBUG = true;
+Engine.DEBUG = window.DEBUG = false;
 
 Engine.deltaTime = 1.0 / Engine.FPS;
 Engine.realDeltaTime = Engine.deltaTime;
@@ -1309,6 +1308,8 @@ function Game() {
 	this.effectBuffer.trackBounds = false;
 	this.camera = new Camera(this);
 
+	// this.bloodSplatCanvas = document.createElement('canvas');
+	// this.bloodSplatContext = this.bloodSplatCanvas.getContext('2d');
 	// this.entityPosFeedback = new Uint8Array(this.viewportWidth*this.viewportHeight);
 
 	this.loadLevel(0);
@@ -1335,7 +1336,16 @@ Game.prototype.loadLevel = function(levelNum) {
 
 	this.tiles.length = length;
 	this.effects.length = 0;
-	this.entities.length = 0
+	this.entities.length = 0;
+
+	// this.bloodSplatCanvas.width = this.rows*TileSize;
+	// this.bloodSplatCanvas.height = this.columns*TileSize;
+	// this.bloodSplatContext.imageSmoothingEnabled = false;
+	// this.bloodSplatContext.mozImageSmoothingEnabled = false;
+	// this.bloodSplatContext.webkitImageSmoothingEnabled = false;
+	// this.bloodSplatContext.clearRect(0, 0, this.bloodSplatCanvas.width, this.bloodSplatCanvas.height);
+	// this.bloodSplatContext.globalAlpha = 0.05;
+	// this.bloodSplatContext.globalCompositeOperation = 'screen'
 
 	for (var i = 0; i < length; ++i) {
 		var x = i % this.columns;
@@ -1577,6 +1587,7 @@ Game.prototype.render = function(ctx, canvas) {
 				by*backdropSize-parallaxY);
 		}
 	}
+	//ctx.drawImage(this.bloodSplatCanvas, -parallaxX, -parallaxY);
 
 
 	var minTileX = Math.floor(minX / TileSize)-1;
@@ -1721,6 +1732,7 @@ Game.prototype.render = function(ctx, canvas) {
 	}
 
 	this.effectBuffer.update();
+	//this.bloodSplatContext.drawImage(this.effectBuffer.canvas, parallaxX, parallaxY);
 	ctx.drawImage(this.effectBuffer.canvas, 0, 0);
 }
 
@@ -1849,8 +1861,6 @@ Gib.prototype.update = function() {
 	blood.vy += this.vy / 2;
 	this.game.addEffect(blood);
 };
-
-
 
 function Smoke(game, x, y) {
 	Particle.apply(this, arguments);
@@ -2316,7 +2326,7 @@ Copter.prototype.update = function() {
 	}
 
 	if (Math.random() < 0.01) {
-		this.game.addSmoke(this.x, this.y-this.ry);
+		// this.game.addSmoke(this.x, this.y-this.ry);
 	}
 
 
