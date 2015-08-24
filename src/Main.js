@@ -1389,7 +1389,7 @@ Game.prototype.wonLevel = function() {
 Engine.Game = Game;
 
 Game.prototype.addEffect = function(e) {
-	if (this.camera.canSee(e)) {
+	if (e instanceof ExitParticle || this.camera.canSee(e)) {
 		this.effects.push(e);
 	}
 };
@@ -1397,7 +1397,7 @@ Game.prototype.addEffect = function(e) {
 Game.prototype.updateArray = function(arr, isEffects) {
 	for (var i = 0; i < arr.length; ++i) {
 		arr[i].update();
-		if (isEffects && !this.camera.canSee(arr[i])) {
+		if (isEffects && !(arr[i] instanceof ExitParticle || this.camera.canSee(arr[i]))) {
 			arr[i].active = false;
 		}
 	}
@@ -1910,6 +1910,63 @@ Flame.prototype.update = function() {
 	}
 };
 
+function ExitParticle(game, exit) {
+	Particle.call(this, game, exit.x, exit.y);
+	this.exit = exit;
+	this.xOffset = 5*(Math.random() - 0.5);
+	this.yOffset = 5*(Math.random() - 0.5);
+	this.pos = Math.random() * 0.7;
+	this.life = Math.floor(Math.random() * 20 + 20);
+	this.speed = (Math.random() + 0.4)*0.02;
+	this.opacity = Math.random();
+	this.sprite = Math.floor(Math.random() * 4);
+}
+
+ExitParticle.prototype = Object.create(Particle.prototype);
+ExitParticle.prototype.constructor = ExitParticle;
+Engine.ExitParticle = ExitParticle;
+
+ExitParticle.prototype.update = function() {
+	if (--this.life < 0 || this.pos >= 1) {
+		this.active = false;
+		return;
+	}
+
+	var xs = this.exit.x// + Math.cos(this.exit.heading)*2;
+	var ys = this.exit.y// + Math.sin(this.exit.heading)*2;
+	var xm = this.exit.x// + Math.cos(this.exit.heading)*20;
+	var ym = this.exit.y// + Math.sin(this.exit.heading)*20;
+
+	var x0 = xs + (xm - this.exit.x)*this.pos;
+	var y0 = ys + (ym - this.exit.y)*this.pos;
+
+	var x1 = xm + (this.game.player.x - xm)*this.pos;
+	var y1 = ym + (this.game.player.y - ym)*this.pos;
+
+	this.x = x0 + (x1 - x0) * this.pos + this.xOffset * this.pos;
+	this.y = y0 + (y1 - y0) * this.pos + this.yOffset * this.pos;
+
+	this.pos += this.speed;
+	this.sprite = (this.sprite+1)%4;
+};
+
+ExitParticle.prototype.render = function(ctx, sx, sy, pix) {
+	var px = Math.round(this.x-sx);
+	var py = Math.round(this.y-sy);
+	if (px >= 0 && px < ctx.canvas.width && py >= 0 && py < ctx.canvas.height) {
+		var oldAlpha = ctx.globalAlpha;
+		ctx.globalAlpha = this.opacity;
+		var sizeMul = 8 * ((1 - this.pos)*0.5 + 0.5);
+		ctx.drawImage(
+			Assets.images.misc.image,
+			(4+this.sprite)*8, 3*8, 8, 8,
+			px-sizeMul/2, py-sizeMul/2, sizeMul, sizeMul);
+		ctx.globalAlpha = oldAlpha;
+	}
+}
+
+
+
 function Explosion(game, x, y) {
 	Particle.apply(this, arguments);
 	this.vx = 0;
@@ -1949,8 +2006,6 @@ Explosion.prototype.update = function() {
 };
 
 Explosion.prototype.render = function() {};
-
-
 
 function Entity(game) {
 	this.game = game;
@@ -2139,7 +2194,9 @@ function Exit(game, x, y) {
 	this.sprite = 0;
 	this.bob = 0
 	this.visible = false;
-}
+	this.heading = Math.random() * Math.PI*2;
+	this.deltaHeading = (Math.random()-0.5)/100;
+};
 
 Engine.Exit = Exit;
 Exit.prototype = Object.create(Entity.prototype);
@@ -2161,13 +2218,20 @@ Exit.prototype.update = function() {
 		}
 	}
 	else {
+		this.heading += this.deltaHeading;
+		this.deltaHeading += (Math.random()-0.5)/100;
+		this.deltaHeading = clamp(this.deltaHeading, -0.05, 0.05);
 		this.sprite = (this.sprite + 1)&7;
 		++this.bob;
 		if (distBetween(this.x, this.y, this.game.player.x, this.game.player.y) < this.rx*3) {
 		// if (this.collidesWithPlayer()) {
 			this.game.wonLevel();
 		}
+		else if (Math.random() < 0.2) {
+			this.game.addEffect(new ExitParticle(this.game, this))
+		}
 	}
+
 };
 
 Exit.bobRate = 10;
@@ -2391,7 +2455,7 @@ Engine.update = function() {
 
 };
 
-Engine.doOverlay = true;
+Engine.doOverlay = false;
 
 Engine.render = function() {
 	Engine.emit('render');
