@@ -22,6 +22,12 @@ var Assets = {
 		}),
 		boom: new Howl({
 			src: ['res/boom.wav']
+		}),
+		winlevel: new Howl({
+			src: ['res/winlevel.wav']
+		}),
+		exitAppear: new Howl({
+			src: ['res/exit-appear.wav']
 		})
 	},
 	music: new Howl({
@@ -34,6 +40,10 @@ var Assets = {
 	}),
 	deathMusic: new Howl({
 		src: ['res/deathmusic.mp3', 'res/deathmusic.ogg'],
+		loop: true
+	}),
+	winMusic: new Howl({
+		src: ['res/winner-music.mp3', 'res/winner-music.ogg'],
 		loop: true
 	})
 };
@@ -113,13 +123,19 @@ function loadImage(name, src) {
 
 Assets.loadAll = function() {
 	return Promise.all([
-		loadImage('level', 'res/lvl.png'),
 		loadImage('sprites', 'res/sprites.png'),
 		loadImage('eye', 'res/eye.png'),
 		loadImage('misc', 'res/misc.png'),
 		loadImage('copter', 'res/copter.png'),
 		loadImage('tiles', 'res/tiles-only.png'),
-		loadImage('backdrop', 'res/backdrop.png')
+		loadImage('backdrop', 'res/backdrop.png'),
+		loadImage('exit', 'res/exit-sprite.png'),
+		loadImage('l5', 'res/levels/L5.png'),
+		loadImage('l4', 'res/levels/L4.png'),
+		loadImage('l3', 'res/levels/L3.png'),
+		loadImage('l2', 'res/levels/L2.png'),
+		loadImage('l1', 'res/levels/L1.png')
+		// loadImage('font', 'res/font.png')
 	]);
 }
 

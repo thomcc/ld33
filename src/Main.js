@@ -489,6 +489,11 @@ function Tentacle(numPoints, ox, oy, parent) {
 	this.drag = Math.random()*0.2 + 0.75;
 	this.drift = (Math.random() - 0.5)/100
 	this.segLength = Math.random() * 0.8 + 1.0;
+	var tr = (0x31+Math.floor((Math.random() - 0.5)*10)) & 0xff;
+	var tg = (0x30+Math.floor((Math.random() - 0.5)*10)) & 0xff;
+	var tb = (0x10+Math.floor((Math.random() - 0.5)*10)) & 0xff;
+
+	this.color = 0xff000000|(tb<<16)|(tg<<8)|(tr);//0xff103031;
 }
 
 Tentacle.spacing = 5;
@@ -604,38 +609,31 @@ Tentacle.prototype.gibify = function(game) {
 		game.addEffect(gib);
 	}
 };
-
+Tentacle.prototype.makeRedder = function() {
+	var r = this.color & 0xff;
+	r = clamp(r + Math.ceil(Math.random() * 4), 0, 0xff);
+	this.color = (this.color & 0xffffff00)|r;
+};
 Tentacle.prototype.drawOnPixels = function(pixels, sx, sy, color) {
 	var data = this.data;
 
 	var px = data[SEG_X];
 	var py = data[SEG_Y];
 
-	var tentacleStartX = Math.round(px-sx+0.5);
-	var tentacleStartY = Math.round(py-sy+0.5);
-
 	var minXSeen = pixels.bounds.minX;
 	var minYSeen = pixels.bounds.minY;
 	var maxXSeen = pixels.bounds.maxX;
 	var maxYSeen = pixels.bounds.maxY;
-	var drewInitialDots = false;
 
 	for (var i = SEG_SIZE, end = data.length; i < end; i += SEG_SIZE) {
 		var nx = data[i+SEG_X];
 		var ny = data[i+SEG_Y];
-		var startX = Math.round(px-sx+0.5);
-		var startY = Math.round(py-sy+0.5);
-		var endX = Math.round(nx-sx+0.5);
-		var endY = Math.round(ny-sy+0.5);
+		var startX = Math.round(px-sx);
+		var startY = Math.round(py-sy);
+		var endX = Math.round(nx-sx);
+		var endY = Math.round(ny-sy);
 		bresenham(startX, startY, endX, endY, pixels, color);
-		if (!drewInitialDots) {
 
-			if (tentacleStartX >= 0 && tentacleStartX < pixels.width &&
-				tentacleStartY >= 0 && tentacleStartY < pixels.height) {
-				//pixels.pixels[tentacleStartX + tentacleStartY * pixels.width] = 0xffff00ff;
-			}
-			drewInitialDots = true;
-		}
 
 		minXSeen = Math.min(minXSeen, startX, endX);
 		minYSeen = Math.min(minYSeen, startY, endY);
@@ -656,12 +654,16 @@ Tentacle.prototype.drawOnPixels = function(pixels, sx, sy, color) {
 function Monster(game) {
 	this.vx = 0;
 	this.vy = 0;
+	this.timer = new Timer();
 
 	this.hp = 100;
 	this.maxHp = 100;
 	this.active = true;
 
 	this.deathTimer = 0;
+
+	this.blinkTime = 0;
+	this.blinking = false;
 
 	this.x = 0;
 	this.y = 0;
@@ -747,12 +749,20 @@ Monster.prototype.hurtFor = function(amt) {
 	NaNCheck(amt);
 	this.hitTimer = 20;
 	this.hp -= amt;
+	this.bloodyTentacles(amt);
+
 	if (this.hp < 0) {
 		this.hp = 0;
 	}
 	Assets.sounds.ouch.play();
 	if (this.hp === 0) {
 		this.die();
+	}
+	else {
+		if (!this.blinking) {
+			this.blinking = true;
+			// this.blinkTime = 0;
+		}
 	}
 };
 
@@ -782,6 +792,20 @@ Monster.prototype.blockCheck = function(x, y) {
 		this.game.isBlocked(x, y-this.ry) ||
 		this.game.isBlocked(x, y+this.ry) ||
 		this.game.isBlocked(x, y)
+	);
+};
+// @HACK
+Monster.prototype.spikeCheck = function(x, y) {
+	return (
+		this.game.isSpikeTile(x-this.rx, y-this.ry) ||
+		this.game.isSpikeTile(x-this.rx, y+this.ry) ||
+		this.game.isSpikeTile(x-this.rx, y) ||
+		this.game.isSpikeTile(x+this.rx, y-this.ry) ||
+		this.game.isSpikeTile(x+this.rx, y+this.ry) ||
+		this.game.isSpikeTile(x+this.rx, y) ||
+		this.game.isSpikeTile(x, y-this.ry) ||
+		this.game.isSpikeTile(x, y+this.ry) ||
+		this.game.isSpikeTile(x, y)
 	);
 };
 
@@ -814,6 +838,8 @@ Monster.prototype.setSize = function(l) {
 };
 
 Monster.prototype.update = function() {
+
+
 	if (this.dead) {
 		--this.deathTimer;
 		if (this.deathTimer === 0) {
@@ -829,17 +855,30 @@ Monster.prototype.update = function() {
 		}
 		return;
 	}
+	this.timer.update();
+	if (Math.random() < 0.01 && this.timer.testOrSet('blink', 240)) {
+		this.blinking = true;
+		console.log('BLINK')
+	}
+
+	if (this.blinking) {
+		++this.blinkTime;
+		if (this.blinkTime >= 20) {
+			this.blinkTime = 0;
+			this.blinking = false;
+		}
+	}
+
 	if (this.invincibleTimer > 0) {
 		--this.invincibleTimer;
 	}
 	if (this.hitTimer > 0) {
 		--this.hitTimer;
 	}
-
 	else {
-		if (this.hp < this.maxHp) {
-			this.hp += 0.05;
-		}
+		// if (this.hp < this.maxHp) {
+			//this.hp += 0.05;
+		// }
 	}
 	this.move();
 	for (var i = 0; i < this.tentacles.length; ++i) {
@@ -893,16 +932,50 @@ Monster.prototype.move = function() {
 Monster.prototype.collide = function(dx, dy) {
 	if (dx !== 0) this.vx = 0;
 	if (dy !== 0) this.vy = 0;
+
+	var nx = this.x + dx;
+	var ny = this.y + dy;
+
+	if (this.spikeCheck(nx, ny)){
+		if (this.hitTimer === 0) {
+			this.hurtFor(10);
+			if (dx !== 0) this.vx = -dx*3;
+			if (dy !== 0) this.vy = -dy*3;
+		}
+	}
 };
 
 Monster.prototype.spriteX = function() {
 	var sizeData = Monster.SizeData[this.size]
-	return this.sprite * sizeData.sprites.width;
+	var sprite = this.sprite;
+	var blinkTime = this.blinkTime>>1;
+	if (blinkTime > 5) {
+		blinkTime = 10 - blinkTime;
+	}
+	else {
+		blinkTime = blinkTime;
+	}
+	if (blinkTime !== 0) {
+		console.log("blinkTime: "+blinkTime);
+	}
+	sprite += blinkTime;
+
+	return sprite * sizeData.sprites.width;
 };
 
 Monster.prototype.spriteY = function() {
 	var sizeData = Monster.SizeData[this.size];
 	return sizeData.sprites.y;
+};
+
+Monster.prototype.bloodyTentacles = function(amount) {
+	if (!amount) {
+		amount = 1;//Math.ceil(Math.random() * 5 + 5);
+	}
+
+	for (var i = 0; i < amount; ++i) {
+		this.tentacles[(Math.random()*this.tentacles.length)|0].makeRedder();
+	}
 };
 
 Engine.Monster = Monster;
@@ -1026,8 +1099,8 @@ Engine.Timer = Timer;
 
 function Camera(game) {
 	this.game = game;
-	this.xBound = game.columns * TileSize;
-	this.yBound = game.rows * TileSize;
+	// this.xBound = game.columns * TileSize;
+	// this.yBound = game.rows * TileSize;
 	this.focus = this.game.player;
 	this.width = Engine.screenWidth / Engine.scale;
 	this.height = Engine.screenHeight / Engine.scale;
@@ -1057,6 +1130,15 @@ Camera.prototype.screenShake = function(amt) {
 	this.setPosition(this.x+ox, this.y+oy);
 };
 
+Camera.prototype.xBound = function() {
+	return this.game.columns*TileSize;
+};
+
+Camera.prototype.yBound = function() {
+	return this.game.rows*TileSize;
+};
+
+
 Camera.prototype.update = function() {
 	var cx = this.x;
 	var cy = this.y;
@@ -1080,8 +1162,8 @@ Camera.prototype.update = function() {
 		gx += frx / 3.0;
 		gy += fry / 3.0;
 	}
-	gx = clamp(gx, this.width/2, this.xBound-this.width/2);
-	gy = clamp(gy, this.height/2, this.yBound-this.height/2);
+	gx = clamp(gx, this.width/2, this.xBound()-this.width/2);
+	gy = clamp(gy, this.height/2, this.yBound()-this.height/2);
 
 	var nx = gx - cx;
 	var ny = gy - cy;
@@ -1104,8 +1186,8 @@ Camera.prototype.canSee = function(ent) {
 };
 
 Camera.prototype.setPosition = function(nx, ny) {
-	this.x = clamp(nx, this.width/2, this.xBound-this.width/2);
-	this.y = clamp(ny, this.height/2, this.yBound-this.height/2);
+	this.x = clamp(nx, this.width/2, this.xBound()-this.width/2);
+	this.y = clamp(ny, this.height/2, this.yBound()-this.height/2);
 
 	this.minX = this.x-this.width/2;
 	this.minY = this.y-this.height/2;
@@ -1206,43 +1288,10 @@ Tile.fixUpTileArray = function(tiles, columns, rows) {
 Engine.Tile = Tile;
 
 function Game() {
-	var tiles = Assets.images.level;
-	var pixelData = tiles.getPixelData();
-	this.columns = pixelData.width;
-	this.rows = pixelData.height;
-	var pix = pixelData.pixels;
-	var length = this.columns*this.rows;
-
-	this.tiles = new Array(length);
-
+	this.player = new Monster(this);
 	this.effects = [];
 	this.entities = [];
-
-	this.player = new Monster(this);
-	for (var i = 0; i < length; ++i) {
-		var x = i % this.columns;
-		var y = Math.floor(i / this.columns);
-
-		if (pix[i] === 0xff000000) {
-			this.tiles[i] = new Tile(1);
-		}
-		else if (pix[i] === 0xff808080) {
-			this.tiles[i] = new Tile(2);
-		}
-		else {
-			this.tiles[i] = new Tile(0);
-			if (pix[i] === 0xffffffff) {
-				console.log("player ", x, y);
-				this.player.setPosition(x*TileSize, y*TileSize)
-			}
-			else if (pix[i] === 0xffff00ff) {
-				console.log("copter ", x, y);
-				this.addEntity(new Copter(this, x*TileSize, y*TileSize));
-			}
-		}
-	}
-
-	Tile.fixUpTileArray(this.tiles, this.columns, this.rows)
+	this.tiles = [];
 
 
 	// this.addEntity(new Copter(this, 25*TileSize, 25*TileSize));
@@ -1260,9 +1309,81 @@ function Game() {
 	this.effectBuffer.trackBounds = false;
 	this.camera = new Camera(this);
 
-	this.entityPosFeedback = new Uint8Array(this.viewportWidth*this.viewportHeight);
+	// this.entityPosFeedback = new Uint8Array(this.viewportWidth*this.viewportHeight);
+
+	this.loadLevel(0);
+}
+
+Game.Levels = [
+	{imageName: 'l1'},
+	{imageName: 'l2'},
+	{imageName: 'l3'},
+	{imageName: 'l4'},
+	{imageName: 'l5'}
+];
+
+Game.prototype.loadLevel = function(levelNum) {
+	this.levelNum = levelNum;
+	var tiles = Assets.images[Game.Levels[levelNum].imageName];
+	var pixelData = tiles.getPixelData();
+
+	this.columns = pixelData.width;
+	this.rows = pixelData.height;
+
+	var pix = pixelData.pixels;
+	var length = this.columns*this.rows;
+
+	this.tiles.length = length;
+	this.effects.length = 0;
+	this.entities.length = 0
+
+	for (var i = 0; i < length; ++i) {
+		var x = i % this.columns;
+		var y = Math.floor(i / this.columns);
+
+		if (pix[i] === 0xff000000) {
+			this.tiles[i] = new Tile(1);
+		}
+		else if (pix[i] === 0xff808080) {
+			this.tiles[i] = new Tile(2);
+		}
+		else if (pix[i] === 0xff0000ff) {
+			this.tiles[i] = new Tile(3);
+		}
+		else {
+			this.tiles[i] = new Tile(0);
+			if (pix[i] === 0xffffffff) {
+				console.log("player ", x, y);
+				this.player.setPosition(x*TileSize, y*TileSize)
+			}
+			else if (pix[i] === 0xffff00ff) {
+				console.log("copter ", x, y);
+				this.addEntity(new Copter(this, x*TileSize, y*TileSize));
+			}
+			else if (pix[i] === 0xffff0000) {
+				console.log("exit ", x, y);
+				this.addEntity(new Exit(this, x*TileSize, y*TileSize));
+			}
+		}
+	}
+
+	Tile.fixUpTileArray(this.tiles, this.columns, this.rows)
 
 };
+
+Game.prototype.wonLevel = function() {
+	Assets.sounds.winlevel.play();
+	if (this.levelNum+1 >= Game.Levels.length) {
+		Engine.wonGame();
+	}
+	else {
+		if (this.player.size < 2) {
+			this.player.setSize(this.player.size+1);
+		}
+		this.player.hp = this.player.maxHp;
+		this.loadLevel(this.levelNum+1);
+	}
+}
 
 
 Engine.Game = Game;
@@ -1312,6 +1433,12 @@ Game.prototype.isBlocked = function(x, y) {
 	x = Math.round(x/TileSize-0.5);
 	y = Math.round(y/TileSize-0.5);
 	return this.getTile(x|0, y|0) !== 0;
+};
+
+Game.prototype.isSpikeTile = function(x, y){
+	x = Math.round(x/TileSize-0.5);
+	y = Math.round(y/TileSize-0.5);
+	return this.getTile(x|0, y|0) === 3;
 };
 
 Game.prototype.getTile = function(x, y) {
@@ -1377,6 +1504,7 @@ Game.prototype.tentacleTouched = function(x, y, rw, rh) {
 	for (var y = ts; y <= bs; ++y) {
 		for (var x = ls; x <= rs; ++x) {
 			if (tbuf.pixels[x+y*width] !== 0) {
+				this.player.bloodyTentacles();
 				return true;
 			}
 		}
@@ -1397,19 +1525,6 @@ Game.prototype.explosionCheck = function(e, x, y, dmg, r) {
 		e.hurtFor(Math.max(Math.floor(dmg*falloff), 1));
 		e.vx += dx * 5 * (1 - len);
 		e.vy += dy * 5 * (1 - len);
-		// if (e === this.player) {
-		// 	var gibs = 4 + (Math.random()*3)|0
-		// 	for (var i = 0; i < gibs; ++i) {
-		// 		var ox = (Math.random() - 0.5)*this.player.rx;
-		// 		var oy = (Math.random() - 0.5)*this.player.ry;
-		// 		var gib = new Gib(this, e.x+ox, e.y+oy, true);
-		// 		gib.vx *= 0.1;
-		// 		gib.vy *= 0.1;
-		// 		gib.vx += dx * 5 * (1 - len);
-		// 		gib.vy += dx * 5 * (1 - len);
-		// 		this.addEffect(gib);
-		// 	}
-		// }
 	}
 }
 
@@ -1427,7 +1542,7 @@ Game.prototype.explode = function(x, y, dmg, radius) {
 			continue;
 		}
 		if (e instanceof Copter) {
-			this.explosionCheck(e, x, y, dmg, radius);
+			this.explosionCheck(e, x, y, dmg/4, radius/2);
 		}
 	}
 	this.addEffect(new Explosion(this, x, y))
@@ -1518,9 +1633,8 @@ Game.prototype.render = function(ctx, canvas) {
 		var tentaclePixels = this.tentacleBuffer;
 		tentaclePixels.reset();
 
-
 		for (var i = 0, len = tentacles.length; i < len; ++i) {
-			tentacles[i].drawOnPixels(this.tentacleBuffer, minX, minY, tentacleColor);
+			tentacles[i].drawOnPixels(this.tentacleBuffer, minX, minY, this.player.hitTimer === 0 ? tentacles[i].color : 0xff72dfff);
 		}
 
 		{
@@ -1537,33 +1651,28 @@ Game.prototype.render = function(ctx, canvas) {
 					var pixel = pix32[(tx+0) + (ty+0) * tpixW];
 
 					if (pixel !== 0 && pixel !== 0xffff00ff) {
-						// if ()  {
-						// 	pix32[(tx+0) + (ty+0) * tpixW] = tentacleColor;
-						// 	if (tx !== 0 && pix32[(tx-1) + (ty+0) * tpixW] === 0) {
-						// 		pix32[(tx-1) + (ty+0) * tpixW] = tentacleColor;
-						// 	}
-						// }
 						continue;
 					}
-					var tocol = pixel === 0xffff00ff ? tentacleColor-1 : outlineColor;
-					if (ty+1 < tpixH && pix32[(tx+0) + (ty+1) * tpixW] === tentacleColor) {
-						pix32[(tx+0) + (ty+0) * tpixW] = tocol;
+					//var tocol = //pixel === 0xffff00ff ? tentacleColor-1 : outlineColor;
+					if (ty+1 < tpixH && pix32[(tx+0) + (ty+1) * tpixW] !== 0 && pix32[(tx+0) + (ty+1) * tpixW] !== outlineColor) {
+						pix32[(tx+0) + (ty+0) * tpixW] = outlineColor;
 					}
-					else if (ty-1 >= 0 && (pix32[(tx+0) + (ty-1) * tpixW] === tentacleColor)) {
-						pix32[(tx+0) + (ty+0) * tpixW] = tocol;
+					else if (ty-1 >= 0 && pix32[(tx+0) + (ty-1) * tpixW] !== 0 && pix32[(tx+0) + (ty-1) * tpixW] !== outlineColor) {
+						pix32[(tx+0) + (ty+0) * tpixW] = outlineColor;
 					}
-					else if (tx-1 >= 0 && pix32[(tx-1) + (ty+0) * tpixW] === tentacleColor) {
-						pix32[(tx+0) + (ty+0) * tpixW] = tocol;
+					else if (tx-1 >= 0 && pix32[(tx-1) + (ty+0) * tpixW] !== 0 && pix32[(tx-1) + (ty+0) * tpixW] !== outlineColor) {
+						pix32[(tx+0) + (ty+0) * tpixW] = outlineColor;
 					}
-					else if (tx+1 < tpixW && pix32[(tx+1) + (ty+0) * tpixW] === tentacleColor) {
-						pix32[(tx+0) + (ty+0) * tpixW] = tocol;
+					else if (tx+1 < tpixW && pix32[(tx+1) + (ty+0) * tpixW] !== 0 && pix32[(tx+1) + (ty+0) * tpixW] !== outlineColor) {
+						pix32[(tx+0) + (ty+0) * tpixW] = outlineColor;
 					}
+					/*
 					else if (pixel === 0xffff00ff) {
 						pix32[(tx+0) + (ty+0) * tpixW] = tentacleColor-1;
 						if (pixel === 0xffff00ff && ty+1 < tpixH && pix32[(tx+0) + (ty+1) * tpixW] === 0) {
 							pix32[(tx+0) + (ty+1) * tpixW] = outlineColor
 						}
-					}
+					}*/
 				}
 			}
 		}
@@ -1774,6 +1883,7 @@ function Flame(game, x, y) {
 	this.gravity = 0;
 	this.life >>= 1;
 	this.age = this.life;
+	this.dir = (Math.random()*3)|0
 	this.drag = 0.92;
 	this.emitSmoke = true;
 }
@@ -1783,7 +1893,7 @@ Engine.Flame = Flame;
 
 Flame.prototype.initialVyMul = 1.0;
 Flame.prototype.render = function() {
-	this.sprite = 8 + Math.floor(4 * this.life / this.age);
+	this.sprite = (8*this.dir) + Math.floor(4 * this.life / this.age);
 	Particle.prototype.render.apply(this, arguments);
 };
 
@@ -1862,6 +1972,22 @@ Engine.Entity = Entity;
 Entity.prototype.update = function() {};
 Entity.prototype.render = function(c, mx, my) {};
 
+Entity.prototype.collidesWithPlayer = function() {
+	var player = this.game.player;
+	var pLeft = player.x - player.width/2;
+	var pRight = player.x + player.width/2;
+	var pTop = player.y - player.height/2;
+	var pBottom = player.y + player.height/2;
+
+	var tLeft = this.x - this.rx;
+	var tRight = this.x + this.rx;
+	var tBottom = this.y + this.ry;
+	var tTop = this.y - this.ry;
+
+	return !(
+		pLeft > tLeft || pRight < tRight ||
+		pTop > tTop || pBottom < tBottom);
+};
 Entity.prototype.setPosition = function(x, y) {
 	this.y = y;
 	this.x = x;
@@ -1909,23 +2035,6 @@ Bullet.prototype.update = function() {
 
 };
 
-Bullet.prototype.collidesWithPlayer = function() {
-	var player = this.game.player;
-	var pLeft = player.x - player.width/2;
-	var pRight = player.x + player.width/2;
-	var pTop = player.y - player.height/2;
-	var pBottom = player.y + player.height/2;
-
-	var tLeft = this.x - this.rx;
-	var tRight = this.x + this.rx;
-	var tBottom = this.y + this.ry;
-	var tTop = this.y - this.ry;
-
-	return !(
-		pLeft > tLeft || pRight < tRight ||
-		pTop > tTop || pBottom < tBottom);
-}
-
 Bullet.prototype.onPlayerCollision = function() {
 	this.active = false;
 	var p = this.game.player;
@@ -1953,7 +2062,7 @@ Bullet.prototype.render = function(c, sx, sy, pix) {
 		if (Math.random() * steps < i) {
 			continue;
 		}
-		var br = (200 - i * 200 / steps)&0xff;
+		var br = (255 - i * 128 / steps)&0xff;
 		var xx = (px - dx * i / steps)|0;
 		var yy = (py - dy * i / steps)|0;
 		var pixel = 0xff000000|(br<<16)|(br<<8)|br;
@@ -1965,6 +2074,7 @@ Bullet.prototype.render = function(c, sx, sy, pix) {
 
 function Rocket(game, shooter, dx, dy, dmg, speed) {
 	Bullet.apply(this, arguments);
+	this.damage += 10; // :3
 	this.rx = 4;
 	this.ry = 4;
 	// Assets.sounds.shootRocket.play();
@@ -2020,6 +2130,64 @@ Rocket.prototype.onPlayerCollision = function() {
 }
 
 
+
+function Exit(game, x, y) {
+	Entity.call(this, game);
+	this.setPosition(x, y);
+	this.rx = 8;
+	this.ry = 8;
+	this.sprite = 0;
+	this.bob = 0
+	this.visible = false;
+}
+
+Engine.Exit = Exit;
+Exit.prototype = Object.create(Entity.prototype);
+Exit.prototype.constructor = Exit;
+
+Exit.prototype.update = function() {
+	if (!this.visible) {
+		var ents = this.game.entities;
+		var sawHostile = false;
+		for (var i = 0; i < ents.length; ++i) {
+			if (ents[i].isHostile) {
+				sawHostile = true;
+				break;
+			}
+		}
+		if (!sawHostile) {
+			this.visible = true;
+			Assets.sounds.exitAppear.play();
+		}
+	}
+	else {
+		this.sprite = (this.sprite + 1)&7;
+		++this.bob;
+		if (distBetween(this.x, this.y, this.game.player.x, this.game.player.y) < this.rx*3) {
+		// if (this.collidesWithPlayer()) {
+			this.game.wonLevel();
+		}
+	}
+};
+
+Exit.bobRate = 10;
+Exit.prototype.render = function(ctx, sx, sy) {
+	if (!this.visible) {
+		return;
+	}
+	var tx = this.x;
+	var ty = this.y + Math.sin(this.bob/Exit.bobRate)*2;
+
+	var px = Math.round(tx - sx);
+	var py = Math.round(ty - sy);
+
+	ctx.drawImage(
+		Assets.images.exit.image,
+		this.sprite*16, 0, 16, 16,
+		px-8, py-8, 16, 16);
+};
+
+
 function Copter(game, x, y) {
 	Entity.call(this, game);
 	this.timer = new Timer();
@@ -2031,11 +2199,14 @@ function Copter(game, x, y) {
 	this.rx = this.ry = 8;
 	this.bob = (Math.random() * 40)|0;
 	this.sprite = (Math.random()*8)|0;
+	this.weaponType = Math.random() < 0.9 ? Rocket : Bullet;
 }
 
 Engine.Copter = Copter;
 Copter.prototype = Object.create(Entity.prototype);
 Copter.prototype.constructor = Copter;
+
+Copter.prototype.isHostile = true;
 
 Copter.prototype.die = function() {
 	Assets.sounds.mdie.play();
@@ -2099,7 +2270,7 @@ Copter.prototype.update = function() {
 			}
 		}
 
-		if (this.timer.testOrSet('shoot', 60)) {
+		if (this.weaponType && this.timer.testOrSet('shoot', 60)) {
 			var dx = this.game.player.x - this.x;
 			var dy = this.game.player.y - this.y;
 			var len = normLen(dx, dy);
@@ -2108,8 +2279,7 @@ Copter.prototype.update = function() {
 			dx += (Math.random()-0.5) / 10;
 			dy += (Math.random()-0.5) / 10;
 			len = normLen(dx, dy);
-			// this.game.addEntity(new Bullet(this.game, this, dx/len, dy/len, 6 + (Math.random() * 3)|0, 4));
-			this.game.addEntity(new Rocket(this.game, this, dx/len, dy/len, 20 + (Math.random() * 3)|0, 4));
+			this.game.addEntity(new this.weaponType(this.game, this, dx/len, dy/len, 10 + (Math.random() * 3)|0, 4));
 		}
 
 		if (distToPlayer < 50 && this.timer.testOrSet('dart', 40)) {
@@ -2138,7 +2308,6 @@ Copter.prototype.update = function() {
 			this.vy += dy / len * 5;
 
 		}
-		// this.game.addEntity(new Bullet(this.game, this, dx/len, dy/len, 4 + (Math.random() * 4)|0));
 	}
 	else {
 
@@ -2183,14 +2352,16 @@ Copter.prototype.render = function(c, sx, sy, pix) {
 		Assets.images.copter.image,
 		spriteX*16, spriteY*16, 16, 16,
 		px-8, py-8, 16, 16);
-}
+};
 
 
 
 
-Engine.loseTime = 0;
+
+
+Engine.overTime = 0;
 Engine.gameOver = function() {
-	Engine.loseTime = Engine.now();
+	Engine.overTime = Engine.now();
 	Engine.didLose = true;
 	Engine.isOver = true;
 	Assets.music.fade(1.0, 0.0, 2.0);
@@ -2201,6 +2372,17 @@ Engine.gameOver = function() {
 	});
 };
 
+Engine.wonGame = function() {
+	Engine.overTime = Engine.now();
+	Engine.didLose = false;
+	Engine.isOver = true;
+	Assets.music.fade(1.0, 0.0, 2.0);
+	Assets.music.once('faded', function() {
+		Assets.music.stop();
+		Assets.winMusic.play();
+	});
+}
+
 Engine.update = function() {
 	Engine.emit('update');
 	if (!Engine.isOver) {
@@ -2208,6 +2390,8 @@ Engine.update = function() {
 	}
 
 };
+
+Engine.doOverlay = true;
 
 Engine.render = function() {
 	Engine.emit('render');
@@ -2243,10 +2427,19 @@ Engine.render = function() {
 			61, 0, 8, 8);
 
 		screenCtx.drawImage(Engine.drawCanvas, 0, 0, Engine.drawCanvas.width, Engine.drawCanvas.height, 0, 0, Engine.screen.width, Engine.screen.height);
+		if (Engine.doOverlay) {
+			var oldGco = screenCtx.globalCompositeOperation;
+			screenCtx.globalCompositeOperation = 'overlay';
 
+			screenCtx.drawImage(Engine.overlayCanvas,
+				0, 0, Engine.overlayCanvas.width, Engine.overlayCanvas.height,
+				0, 0, Engine.screen.width, Engine.screen.height);
+
+			screenCtx.globalCompositeOperation = oldGco;
+		}
 	}
 	else {
-		var opacity = Math.min(1.0, (Engine.now() - Engine.loseTime)/2000);
+		var opacity = Math.min(1.0, (Engine.now() - Engine.overTime)/2000);
 		screenCtx.fillStyle = 'rgba(0, 0, 0, '+opacity+')';
 		screenCtx.fillRect(0, 0, Engine.screen.width, Engine.screen.height);
 
@@ -2257,6 +2450,7 @@ Engine.render = function() {
 		screenCtx.fillStyle = 'rgba(255, 255, 255, '+opacity+')';
 		if (Engine.didLose) {
 			screenCtx.fillText("You were not a very good monster", Engine.screen.width/2, Engine.screen.height/4);
+			screenCtx.fillText("Listen to the sad music", Engine.screen.width/2, Engine.screen.height*1/2)
 			screenCtx.fillText("Refresh to try again", Engine.screen.width/2, Engine.screen.height*3/4)
 
 		} else {
@@ -2267,6 +2461,7 @@ Engine.render = function() {
 
 };
 
+Engine.overlayCanvas = null;
 
 Engine.init = function(canvas) {
 	Engine.screen = canvas;
@@ -2282,6 +2477,36 @@ Engine.init = function(canvas) {
 	drawCanvas.width = Engine.screenWidth / Engine.scale;
 	drawCanvas.height = Engine.screenHeight / Engine.scale;
 	Engine.drawCanvas = drawCanvas;
+
+	var overlayCanvas = Engine.overlayCanvas = document.createElement('canvas');
+	overlayCanvas.width = Engine.screenWidth*Engine.devicePixels;
+	overlayCanvas.height = Engine.screenHeight*Engine.devicePixels;
+	if (Engine.scale !== 1) {
+		var overlayCtx = overlayCanvas.getContext('2d');
+		var scale = Engine.scale*Engine.devicePixels;
+		var pix = new PixelBuffer(scale, scale);
+		for (var x = 0; x < scale; ++x) {
+			pix.putPixel(x, 0, 0x4cffffff);
+			pix.putPixel(x, scale-1, 0x4c000000);
+		}
+
+		for (var y = 0; y < scale; ++y) {
+			pix.putPixel(0, y, 0x4cffffff);
+			pix.putPixel(scale-1, y, 0x4c000000);
+		}
+
+		pix.update();
+		var sw = Engine.screenWidth/Engine.scale;
+		var sh = Engine.screenHeight/Engine.scale;
+
+		for (var j = 0; j < sh; ++j) {
+			for (var i = 0; i < sw; ++i) {
+				overlayCtx.drawImage(pix.canvas, i*scale, j*scale);
+			}
+		}
+	}
+
+
 
 	var drawCtx = drawCanvas.getContext('2d');
 
