@@ -998,7 +998,10 @@ PixelBuffer.prototype.reset = function() {
 	this.bounds.maxX = 0;
 	this.bounds.minY = this.height;
 	this.bounds.maxY = 0;
-	this.pixels.fill(0);
+	for (var i = 0; i < this.pixels.length; ++i) {
+		this.pixels[i] = 0;
+	}
+	// this.pixels.fill(0);
 };
 
 PixelBuffer.prototype.update = function() {
