@@ -17,7 +17,7 @@ window.Engine = Engine;
 Engine.screenWidth = 900;
 Engine.screenHeight = 540;
 Engine.FPS = 60.0;
-Engine.DEBUG = window.DEBUG = false;
+Engine.DEBUG = window.DEBUG = true;
 
 Engine.deltaTime = 1.0 / Engine.FPS;
 Engine.realDeltaTime = Engine.deltaTime;
@@ -1299,7 +1299,7 @@ function Game() {
 	this.effectBuffer = new PixelBuffer(vpwidth, vpheight);
 	this.effectBuffer.trackBounds = false;
 	this.camera = new Camera(this);
-
+	BloodSystem.setGame(this);
 	// this.bloodSplatCanvas = document.createElement('canvas');
 	// this.bloodSplatContext = this.bloodSplatCanvas.getContext('2d');
 	// this.entityPosFeedback = new Uint8Array(this.viewportWidth*this.viewportHeight);
@@ -1421,7 +1421,10 @@ Game.prototype.update = function() {
 	this.player.update();
 
 	this.updateArray(this.effects, true);
+	BloodSystem.update();
+	BloodSystem.clearDead();
 	this.updateArray(this.entities, false);
+
 
 	this.camera.update();
 };
@@ -1701,6 +1704,7 @@ Game.prototype.render = function(ctx, canvas) {
 			this.effects[fxi].render(ctx, minX, minY, this.effectBuffer);
 		}
 	}
+	BloodSystem.render(ctx, minX, minY, this.effectBuffer);
 
 	for (var ei = 0; ei < this.entities.length; ++ei) {
 		this.entities[ei].render(ctx, minX, minY, this.effectBuffer);
@@ -1711,9 +1715,6 @@ Game.prototype.render = function(ctx, canvas) {
 	ctx.drawImage(this.effectBuffer.canvas, 0, 0);
 }
 
-
-// @NOTE: seems to be better since we started writing them onto the screen using pixel manipulation.
-/*
 var PARTICLE_X = 0;
 var PARTICLE_Y = 1;
 var PARTICLE_VX = 2;
@@ -1721,17 +1722,17 @@ var PARTICLE_VY = 3;
 var PARTICLE_LIFE = 4;
 var PARTICLE_SIZE = 5;
 
-function ParticleSystem(game, options) {
-	Object.keys(ParticleSystem.defaults, function(option) {
+function ParticleSystem(options) {
+	Object.keys(ParticleSystem.defaults).forEach(function(option) {
 		if (!(option in options)) {
 			options[option] = ParticleSystem.defaults[option];
 		}
 	});
-	this.game = game;
 	this.options = options;
 
 	this.rx = +options.rx;
 	this.ry = +options.ry;
+	this.game = null;
 
 	this.gravity = +options.gravity;
 	this.drag = +options.drag;
@@ -1751,6 +1752,8 @@ function ParticleSystem(game, options) {
 	this.nextParticleIndex = 0;
 }
 
+Engine.ParticleSystem = ParticleSystem;
+
 ParticleSystem.defaults = {
 	rx: 2,
 	ry: 2,
@@ -1763,6 +1766,10 @@ ParticleSystem.defaults = {
 	vyMul: 2.0,
 	maxParticles: 512,
 };
+ParticleSystem.prototype.setGame = function(g) {
+	this.game = g;
+}
+
 
 ParticleSystem.prototype.add = function(x, y) {
 	var index = this.nextParticleIndex++;
@@ -1791,6 +1798,7 @@ ParticleSystem.prototype.add = function(x, y) {
 	this.particles[index+PARTICLE_VX] = vx;
 	this.particles[index+PARTICLE_VY] = vy;
 	this.particles[index+PARTICLE_LIFE] = this.minLife + Math.random()*(this.maxLife - this.minLife);
+	return index;
 };
 
 ParticleSystem.prototype.update = function() {
@@ -1799,6 +1807,7 @@ ParticleSystem.prototype.update = function() {
 	var drag = +this.drag;
 	var grav = +this.gravity;
 	var game = this.game;
+	var bounce = this.bounce;
 	for (var i = 0; i < end; i += PARTICLE_SIZE) {
 		particles[i+PARTICLE_LIFE] -= 1.0;
 		if (particles[i+PARTICLE_LIFE] <= 0.0) {
@@ -1815,16 +1824,16 @@ ParticleSystem.prototype.update = function() {
 
 		var steps = Math.ceil(Math.sqrt(vx*vx + vy*vy));
 		for (var step = 0; step < steps; ++step) {
-			var nx = x + vx / step;
-			if (game.hitTest(nx, y)) {
+			var nx = x + vx / steps;
+			if (game.isBlocked(nx, y)) {
 				vx *= -bounce;
 			}
 			else {
 				x = nx;
 			}
 
-			var ny = y + vy/step;
-			if (game.hitTest(x, ny)) {
+			var ny = y + vy / steps;
+			if (game.isBlocked(x, ny)) {
 				vy *= -bounce;
 			}
 			else {
@@ -1855,8 +1864,8 @@ ParticleSystem.prototype.clearDead = function() {
 		}
 	}
 	this.particleCount = newCount;
-};*/
-
+	this.nextParticleIndex = newCount >= this.maxParticles ? 0 : newCount;
+};
 
 
 function Particle(game, x, y) {
@@ -1957,28 +1966,62 @@ Particle.prototype.render = function(c, sx, sy) {
 	}
 };
 
-function Blood(game, x, y) {
-	Particle.call(this, game, x, y);
-	this.rx = this.ry = 0.5;
-	// this.color = '#a00000';
-	this.sprite = -1;
-	this.drag = 0.96;
-	this.bounce = 0.1;
-}
+// function Blood(game, x, y) {
+// 	Particle.call(this, game, x, y);
+// 	this.rx = this.ry = 0.5;
+// 	// this.color = '#a00000';
+// 	this.sprite = -1;
+// 	this.drag = 0.96;
+// 	this.bounce = 0.1;
+// }
 
-Blood.prototype = Object.create(Particle.prototype);
-Blood.prototype.constructor = Blood;
-Engine.Blood = Blood;
+// Blood.prototype = Object.create(Particle.prototype);
+// Blood.prototype.constructor = Blood;
+// Engine.Blood = Blood;
 
-Blood.prototype.blockCheck = function(x, y) {
-	return this.game.isBlocked(x, y);
+// Blood.prototype.blockCheck = function(x, y) {
+// 	return this.game.isBlocked(x, y);
+// };
+
+// Blood.prototype.render = function(c, sx, sy, pix) {
+// 	var px = Math.round(this.x - sx);
+// 	var py = Math.round(this.y - sy);
+// 	pix.putPixel(px, py, 0xff0000a0);
+// }
+var BloodSystem = new ParticleSystem({
+	rx: 0.5,
+	ry: 0.5,
+	drag: 0.96,
+	bounce: 0.1,
+	maxParticles: 4096,
+});
+
+Engine.BloodSystem = BloodSystem;
+
+BloodSystem.render = function(ctx, sx, sy, pix) {
+	var end = Math.min(this.maxParticles, this.particleCount)*PARTICLE_SIZE;
+	var particles = this.particles;
+	var drag = +this.drag;
+	var grav = +this.gravity;
+	var game = this.game;
+
+	var bloodColor = 0xff0000a0;
+	var pixels = pix.pixels;
+	var width = pix.width>>>0;
+	var height = pix.height>>>0;
+	for (var i = 0; i < end; i += PARTICLE_SIZE) {
+		// if (particles[i+PARTICLE_LIFE] <= 0.0) {
+		// 	continue;
+		// }
+		var x = particles[i+PARTICLE_X];
+		var y = particles[i+PARTICLE_Y];
+		var renderX = Math.floor(x-sx+0.5);
+		var renderY = Math.floor(y-sy+0.5);
+		if ((renderX>>>0) < width && (renderY>>>0) < height) {
+			pixels[renderX+renderY*width] = bloodColor;
+		}
+	}
 };
-
-Blood.prototype.render = function(c, sx, sy, pix) {
-	var px = Math.round(this.x - sx);
-	var py = Math.round(this.y - sy);
-	pix.putPixel(px, py, 0xff0000a0);
-}
 
 function Gib(game, x, y, isMonstrous) {
 	Particle.call(this, game, x, y);
@@ -1992,12 +2035,23 @@ Engine.Gib = Gib;
 
 Gib.prototype.update = function() {
 	Particle.prototype.update.call(this);
-	var blood = new Blood(this.game, this.x, this.y);
-	blood.vx /= 20;
-	blood.vy /= 20;
-	blood.vx += this.vx / 2;
-	blood.vy += this.vy / 2;
-	this.game.addEffect(blood);
+	// var blood = new Blood(this.game, this.x, this.y);
+	// blood.vx /= 20;
+	// blood.vy /= 20;
+	// blood.vx += this.vx / 2;
+	// blood.vy += this.vy / 2;
+	// this.game.addEffect(blood);
+	var bloodIndex = BloodSystem.add(this.x, this.y);
+
+	var bloodVx = BloodSystem.particles[bloodIndex+PARTICLE_VX];
+	var bloodVy = BloodSystem.particles[bloodIndex+PARTICLE_VY];
+
+	bloodVx = bloodVx/20.0 + this.vx/2.0;
+	bloodVy = bloodVy/20.0 + this.vy/2.0;
+
+	BloodSystem.particles[bloodIndex+PARTICLE_VX] = bloodVx;
+	BloodSystem.particles[bloodIndex+PARTICLE_VY] = bloodVy;
+
 };
 
 function Smoke(game, x, y) {
