@@ -17,7 +17,7 @@ window.Engine = Engine;
 Engine.screenWidth = 900;
 Engine.screenHeight = 540;
 Engine.FPS = 60.0;
-Engine.DEBUG = window.DEBUG = true;
+Engine.DEBUG = window.DEBUG = false;
 
 Engine.deltaTime = 1.0 / Engine.FPS;
 Engine.realDeltaTime = Engine.deltaTime;
