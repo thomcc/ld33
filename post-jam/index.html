@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en-US">
+	<head>
+		<meta charset="utf-8">
+		<title>bloody tentacles</title>
+
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<link href='http://fonts.googleapis.com/css?family=Source+Sans+Pro:300' rel='stylesheet' type='text/css'>
+
+		<style>
+			html, body, div, span, h1, a {
+				margin: 0;
+				padding: 0;
+				border: 0;
+				font-size: 100%;
+				font: inherit;
+				vertical-align: baseline;
+
+			}
+
+			body {
+				text-align: center;
+				background: #222;
+				color: #ccc;
+				font-family: 'Source Sans Pro', sans-serif;
+				font-weight: 300;
+			}
+
+			canvas {
+				display: inline-block;
+				margin-top: 20px;
+			}
+
+			a {
+				color: rgb(255, 135, 0);
+				transition: text-shadow 0.2s ease-in;
+			}
+
+			a:hover {
+				text-shadow: 0 0 2px rgba(255, 135, 0, 0.3);
+			}
+
+			#debug {
+				position: absolute;
+				top: 0;
+				left: 0;
+				background-color: rgba(25, 39, 54, 0.8);
+				color: rgb(255, 161, 58);
+				padding: 10px;
+				font-family: Consolas, 'Andale Mono', monospace;
+				width: 200px;
+				height: 130px;
+			}
+			#debug span {
+				display: block;
+				text-align: left;
+				height: 20px;
+			}
+
+		</style>
+		<script src="lib/prefixfree.min.js"></script>
+	</head>
+	<body>
+		<h1>bloody tentacles</h1>
+		<div class="game">
+			<canvas id="screen"></canvas>
+		</div>
+		<div class="info">
+			<p>you are a floating eyeball / jellyfish monster who hates helicopters and spikes.</p>
+			<p>control your body using WASD or arrow keys, and your tentacles with the mouse by mousing over things when the mouse button is down.</p>
+			<p>this game was made in 72 hours as part of <a href="http://www.ludumdare.com/compo/">ludum dare 33</a>. the theme was "you are the monster". the submission page is available <a href="http://ludumdare.com/compo/ludum-dare-33/?action=preview&uid=7728">here</a>.
+			</p>
+			<p>IMPORTANT: this is the post jam bugfix version. don't judge this one, judge the one located <a href="http://www.thomcc.io/ld33">here</a></p>
+		</div>
+
+		<!-- <div id="debug">
+			<span class="debug-item" id="fps">fps: 60</span>
+			<span class="debug-item" id="tps">tps: 60</span>
+			<span class="debug-item" id="mspf">ms/f: 0.0160</span>
+		</div> -->
+
+		<script src="//cdnjs.cloudflare.com/ajax/libs/es5-shim/4.1.10/es5-shim.js"></script>
+		<script src="//cdnjs.cloudflare.com/ajax/libs/es6-shim/0.33.1/es6-shim.js"></script>
+		<script src="lib/howler/howler.min.js"></script>
+		<!--<script src="lib/howler/howler.core.js"></script>-->
+		<!--<script src="lib/howler/plugins/howler.effects.js"></script>-->
+		<script src="Build.js"></script>
+	</body>
+</html>
