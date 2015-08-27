@@ -1,6 +1,6 @@
 
 
-var Promise = require('bluebird');
+// var Promise = require('bluebird');
 
 var Assets = {
 	images: {},
@@ -122,6 +122,7 @@ function loadImage(name, src) {
 
 
 Assets.loadAll = function() {
+
 	return Promise.all([
 		loadImage('sprites', 'res/sprites.png'),
 		loadImage('eye', 'res/eye.png'),

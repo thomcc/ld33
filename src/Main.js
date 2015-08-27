@@ -8,11 +8,9 @@ if (!console.warn) {
 	console.warn = console.log.bind(console, "WARN: ");
 }
 
-// var _ = require('lodash');
-var EventEmitter = require('events').EventEmitter;
 var Assets = require('./Assets');
 
-var Engine = Object.assign({}, EventEmitter.prototype);
+var Engine = {};
 
 window.Engine = Engine;
 
@@ -131,8 +129,7 @@ Engine.MainLoop = (function() {
 		}
 
 		if ((timeStamp - lastSecond) >= 1000.0) {
-			console.log("fps: "+frames);
-			console.log("tps: "+ticks);
+			console.log("fps: "+frames+", tps: "+ticks+', mspf: '+(frameEnd-frameStart).toFixed(2));
 			if (Engine.DEBUG) {
 				if (tpsElem != null) {
 					tpsElem.textContent = "tps: "+ticks;
@@ -421,11 +418,9 @@ function bresenham(x0, y0, x1, y1, pixelData, color) {
 var TileSize = 12;
 
 
-
 var Movable = {};
 
 Engine.Movable = Movable;
-
 Movable.doMove = function() {
 	var s = Math.ceil(Math.sqrt(this.vx*this.vx+this.vy*this.vy));
 	for (var i = 0; i < s; ++i)	{
@@ -464,8 +459,7 @@ Movable._move = function(dx, dy) {
 	}
 };
 
-Movable.collide = function(dx, dy) {
-};
+Movable.collide = function(dx, dy) {};
 
 
 // tentacles are stored as an array of structs of
@@ -857,7 +851,6 @@ Monster.prototype.update = function() {
 	this.timer.update();
 	if (Math.random() < 0.01 && this.timer.testOrSet('blink', 240)) {
 		this.blinking = true;
-		console.log('BLINK')
 	}
 
 	if (this.blinking) {
@@ -937,6 +930,7 @@ Monster.prototype.collide = function(dx, dy) {
 
 	if (this.spikeCheck(nx, ny)){
 		if (this.hitTimer === 0) {
+			console.log("hurt: spike");
 			this.hurtFor(10);
 			if (dx !== 0) this.vx = -dx*3;
 			if (dy !== 0) this.vy = -dy*3;
@@ -953,9 +947,6 @@ Monster.prototype.spriteX = function() {
 	}
 	else {
 		blinkTime = blinkTime;
-	}
-	if (blinkTime !== 0) {
-		console.log("blinkTime: "+blinkTime);
 	}
 	sprite += blinkTime;
 
@@ -998,7 +989,9 @@ PixelBuffer.prototype.reset = function() {
 	this.bounds.maxX = 0;
 	this.bounds.minY = this.height;
 	this.bounds.maxY = 0;
-	this.pixels.fill(0);
+	for (var i = 0; i < this.pixels.length; ++i) {
+		this.pixels[i] = 0;
+	}
 };
 
 PixelBuffer.prototype.update = function() {
@@ -1292,7 +1285,6 @@ function Game() {
 	this.entities = [];
 	this.tiles = [];
 
-
 	// this.addEntity(new Copter(this, 25*TileSize, 25*TileSize));
 
 
@@ -1363,22 +1355,18 @@ Game.prototype.loadLevel = function(levelNum) {
 		else {
 			this.tiles[i] = new Tile(0);
 			if (pix[i] === 0xffffffff) {
-				console.log("player ", x, y);
 				this.player.setPosition(x*TileSize, y*TileSize)
 			}
 			else if (pix[i] === 0xffff00ff) {
-				console.log("copter ", x, y);
 				this.addEntity(new Copter(this, x*TileSize, y*TileSize));
 			}
 			else if (pix[i] === 0xffff0000) {
-				console.log("exit ", x, y);
 				this.addEntity(new Exit(this, x*TileSize, y*TileSize));
 			}
 		}
 	}
 
 	Tile.fixUpTileArray(this.tiles, this.columns, this.rows)
-
 };
 
 Game.prototype.wonLevel = function() {
@@ -1394,7 +1382,6 @@ Game.prototype.wonLevel = function() {
 		this.loadLevel(this.levelNum+1);
 	}
 }
-
 
 Engine.Game = Game;
 
@@ -1496,19 +1483,12 @@ Game.prototype.tentacleTouched = function(x, y, rw, rh) {
 	if (ts < 0) {
 		ts = 0
 	}
-	if (rs >= this.viewportHeight) {
-		rs = this.viewportHeight-1;
+	if (rs >= this.viewportWidth) {
+		rs = this.viewportWidth-1;
 	}
-	if (bs >= this.viewportWidth) {
-		bs = this.viewportWidth-1;
+	if (bs >= this.viewportHeight) {
+		bs = this.viewportHeight-1;
 	}
-
-	// Assert(rs >= ls && bs >= ts);
-
-	// Assert(ls >= 0 && ls < this.viewportWidth &&
-	// 	rs >= 0 && rs < this.viewportWidth &&
-	// 	ts >= 0 && ts < this.viewportHeight &&
-	// 	bs >= 0 && bs < this.viewportHeight, "tentacleTouch failure");
 
 	var width = this.viewportWidth;
 	for (var y = ts; y <= bs; ++y) {
@@ -1532,6 +1512,7 @@ Game.prototype.explosionCheck = function(e, x, y, dmg, r) {
 		len /= r;
 		var falloff = (1.0 - len)/2 + 0.5;
 		falloff /= 2;
+		if (e === this.player) console.log("hurt: explode");
 		e.hurtFor(Math.max(Math.floor(dmg*falloff), 1));
 		e.vx += dx * 5 * (1 - len);
 		e.vy += dy * 5 * (1 - len);
@@ -1677,13 +1658,6 @@ Game.prototype.render = function(ctx, canvas) {
 					else if (tx+1 < tpixW && pix32[(tx+1) + (ty+0) * tpixW] !== 0 && pix32[(tx+1) + (ty+0) * tpixW] !== outlineColor) {
 						pix32[(tx+0) + (ty+0) * tpixW] = outlineColor;
 					}
-					/*
-					else if (pixel === 0xffff00ff) {
-						pix32[(tx+0) + (ty+0) * tpixW] = tentacleColor-1;
-						if (pixel === 0xffff00ff && ty+1 < tpixH && pix32[(tx+0) + (ty+1) * tpixW] === 0) {
-							pix32[(tx+0) + (ty+1) * tpixW] = outlineColor
-						}
-					}*/
 				}
 			}
 		}
@@ -1693,6 +1667,7 @@ Game.prototype.render = function(ctx, canvas) {
 		// this.tentacleLayerContext.putImageData(this.tentaclePixels.imageData, 0, 0);
 
 		ctx.drawImage(tentaclePixels.canvas, 0, 0);
+
 
 		if (this.player.hitTimer !== 0) {
 
@@ -1737,8 +1712,153 @@ Game.prototype.render = function(ctx, canvas) {
 }
 
 
-// @TODO: need to optimize: game chokes when a lot of blood/gibs are on screen
 // @NOTE: seems to be better since we started writing them onto the screen using pixel manipulation.
+/*
+var PARTICLE_X = 0;
+var PARTICLE_Y = 1;
+var PARTICLE_VX = 2;
+var PARTICLE_VY = 3;
+var PARTICLE_LIFE = 4;
+var PARTICLE_SIZE = 5;
+
+function ParticleSystem(game, options) {
+	Object.keys(ParticleSystem.defaults, function(option) {
+		if (!(option in options)) {
+			options[option] = ParticleSystem.defaults[option];
+		}
+	});
+	this.game = game;
+	this.options = options;
+
+	this.rx = +options.rx;
+	this.ry = +options.ry;
+
+	this.gravity = +options.gravity;
+	this.drag = +options.drag;
+	this.bounce = +options.bounce;
+
+	this.minLife = +options.minLife;
+	this.maxLife = +options.maxLife;
+
+	this.vxMul = +options.vxMul;
+	this.vyMul = +options.vyMul;
+
+	this.maxParticles = (options.maxParticles|0);
+
+	this.particles = new Float32Array(this.maxParticles * PARTICLE_SIZE);
+
+	this.particleCount = 0;
+	this.nextParticleIndex = 0;
+}
+
+ParticleSystem.defaults = {
+	rx: 2,
+	ry: 2,
+	gravity: 0.08,
+	drag: 0.998,
+	bounce: 0.6,
+	minLife: 20,
+	maxLife: 60,
+	vxMul: 1.0,
+	vyMul: 2.0,
+	maxParticles: 512,
+};
+
+ParticleSystem.prototype.add = function(x, y) {
+	var index = this.nextParticleIndex++;
+	if (this.nextParticleIndex === this.maxParticles) {
+		this.nextParticleIndex = 0;
+	}
+	this.particleCount++;
+	if (this.particleCount >= this.maxParticles) {
+		this.particleCount = this.maxParticles;
+	}
+	index *= PARTICLE_SIZE;
+	this.particles[index+PARTICLE_X] = x;
+	this.particles[index+PARTICLE_Y] = y;
+	var vx = 0.0;
+	var vy = 0.0;
+	do {
+		vx = (Math.random() - 0.5) * 2.0;
+		vy = (Math.random() - 0.5) * 2.0;
+	} while (vx * vx + vy * vy > 1);
+
+	var size = Math.sqrt(vx*vx+vy*vy);
+
+	vx = this.vxMul*(vx/size);
+	vy = this.vyMul*(vy/size);
+
+	this.particles[index+PARTICLE_VX] = vx;
+	this.particles[index+PARTICLE_VY] = vy;
+	this.particles[index+PARTICLE_LIFE] = this.minLife + Math.random()*(this.maxLife - this.minLife);
+};
+
+ParticleSystem.prototype.update = function() {
+	var end = Math.min(this.maxParticles, this.particleCount)*PARTICLE_SIZE;
+	var particles = this.particles;
+	var drag = +this.drag;
+	var grav = +this.gravity;
+	var game = this.game;
+	for (var i = 0; i < end; i += PARTICLE_SIZE) {
+		particles[i+PARTICLE_LIFE] -= 1.0;
+		if (particles[i+PARTICLE_LIFE] <= 0.0) {
+			continue;
+		}
+		particles[i+PARTICLE_VX] *= drag;
+		particles[i+PARTICLE_VY] += grav;
+
+		var vx = particles[i+PARTICLE_VX];
+		var vy = particles[i+PARTICLE_VY];
+
+		var x = particles[i+PARTICLE_X];
+		var y = particles[i+PARTICLE_Y];
+
+		var steps = Math.ceil(Math.sqrt(vx*vx + vy*vy));
+		for (var step = 0; step < steps; ++step) {
+			var nx = x + vx / step;
+			if (game.hitTest(nx, y)) {
+				vx *= -bounce;
+			}
+			else {
+				x = nx;
+			}
+
+			var ny = y + vy/step;
+			if (game.hitTest(x, ny)) {
+				vy *= -bounce;
+			}
+			else {
+				y = ny;
+			}
+		}
+		particles[i+PARTICLE_VX] = vx;
+		particles[i+PARTICLE_VY] = vy;
+		particles[i+PARTICLE_X] = x;
+		particles[i+PARTICLE_Y] = y;
+	}
+};
+
+ParticleSystem.prototype.clearDead = function() {
+	var end = Math.min(this.maxParticles, this.particleCount)*PARTICLE_SIZE;
+	var j = 0;
+	var newCount = 0;
+	var particles = this.particles;
+	for (var i = 0; i < end; i += PARTICLE_SIZE) {
+		if (particles[i+PARTICLE_LIFE] > 0) {
+			particles[j+PARTICLE_X] = particles[i+PARTICLE_X];
+			particles[j+PARTICLE_Y] = particles[i+PARTICLE_Y];
+			particles[j+PARTICLE_VX] = particles[i+PARTICLE_VX];
+			particles[j+PARTICLE_VY] = particles[i+PARTICLE_VY];
+			particles[j+PARTICLE_LIFE] = particles[i+PARTICLE_LIFE];
+			j += PARTICLE_SIZE;
+			newCount++;
+		}
+	}
+	this.particleCount = newCount;
+};*/
+
+
+
 function Particle(game, x, y) {
 	this.game = game;
 	this.active = true;
@@ -1787,12 +1907,29 @@ Particle.prototype.update = function() {
 	}
 
 	this.vx *= this.drag;
-	//this.vy *= this.drag;
-
 	this.vy += this.gravity;
+
+	// var s = Math.ceil(Math.sqrt(this.vx*this.vx+this.vy*this.vy));
+	// for (var i = 0; i < s; ++i)	{
+	// 	var nx = this.vx / s;
+
+	// 	if (this.game.hitTest(nx, y)) {
+	// 		this.vx *= -this.bounce
+	// 	}
+	// 	else {
+	// 		this.x = nx;
+	// 	}
+	// 	var ny = this.vy / s;
+	// 	if (this.game.hitTest(x, ny)) {
+	// 		this.vy *= -this.bounce
+	// 	}
+	// 	else {
+	// 		this.y = ny;
+	// 	}
+	// }
+
 	this.doMove();
 };
-
 
 Particle.prototype.collide = function(dx, dy) {
 	if (dx !== 0) this.vx *= -this.bounce;
@@ -1832,6 +1969,7 @@ function Blood(game, x, y) {
 Blood.prototype = Object.create(Particle.prototype);
 Blood.prototype.constructor = Blood;
 Engine.Blood = Blood;
+
 Blood.prototype.blockCheck = function(x, y) {
 	return this.game.isBlocked(x, y);
 };
@@ -1888,6 +2026,7 @@ Smoke.prototype.render = function(c, sx, sy, pixbuf) {
 		}
 	}
 };
+
 function Flame(game, x, y) {
 	Particle.apply(this, arguments);
 	this.gravity = 0;
@@ -1897,6 +2036,7 @@ function Flame(game, x, y) {
 	this.drag = 0.92;
 	this.emitSmoke = true;
 }
+
 Flame.prototype = Object.create(Particle.prototype);
 Flame.prototype.constructor = Flame;
 Engine.Flame = Flame;
@@ -1921,7 +2061,7 @@ Flame.prototype.update = function() {
 };
 
 function ExitParticle(game, exit) {
-	Particle.call(this, game, exit.x, exit.y);
+	Particle.call(this, game, game.player.x, game.player.y);
 	this.exit = exit;
 	this.xOffset = 5*(Math.random() - 0.5);
 	this.yOffset = 5*(Math.random() - 0.5);
@@ -1942,16 +2082,21 @@ ExitParticle.prototype.update = function() {
 		return;
 	}
 
-	var xs = this.exit.x// + Math.cos(this.exit.heading)*2;
-	var ys = this.exit.y// + Math.sin(this.exit.heading)*2;
-	var xm = this.exit.x// + Math.cos(this.exit.heading)*20;
-	var ym = this.exit.y// + Math.sin(this.exit.heading)*20;
+	var player = this.game.player;
 
-	var x0 = xs + (xm - this.exit.x)*this.pos;
-	var y0 = ys + (ym - this.exit.y)*this.pos;
+	var heading = Math.atan2(player.vy, player.vx);
 
-	var x1 = xm + (this.game.player.x - xm)*this.pos;
-	var y1 = ym + (this.game.player.y - ym)*this.pos;
+	var xs = player.x + Math.cos(heading)*2;
+	var ys = player.y + Math.sin(heading)*2;
+
+	var xm = player.x + Math.cos(heading)*20;
+	var ym = player.y + Math.sin(heading)*20;
+
+	var x0 = xs + (xm - player.x)*this.pos;
+	var y0 = ys + (ym - player.y)*this.pos;
+
+	var x1 = xm + (this.exit.x - xm)*this.pos;
+	var y1 = ym + (this.exit.y - ym)*this.pos;
 
 	this.x = x0 + (x1 - x0) * this.pos + this.xOffset * this.pos;
 	this.y = y0 + (y1 - y0) * this.pos + this.yOffset * this.pos;
@@ -2090,7 +2235,7 @@ Bullet.prototype.update = function() {
 	this.lastX = this.x;
 	this.lastY = this.y;
 	Entity.prototype.update.call(this);
-	// this.doMove();
+	this.doMove();
 	if (this.collidesWithPlayer()) {
 		this.onPlayerCollision();
 	}
@@ -2103,6 +2248,7 @@ Bullet.prototype.update = function() {
 Bullet.prototype.onPlayerCollision = function() {
 	this.active = false;
 	var p = this.game.player;
+	console.log("hurt: bullet")
 	p.hurtFor(this.damage);
 	var gib = new Gib(this.game, this.x, this.y, true);
 	gib.vx += this.vx;
@@ -2161,7 +2307,7 @@ Rocket.prototype.update = function() {
 	flame.life = flame.age / 2;
 	this.game.addEffect(flame);
 	Bullet.prototype.update.call(this);
-	this.doMove();
+	// this.doMove();
 };
 
 Rocket.prototype.render = function(c, sx, sy, pix) {
@@ -2193,8 +2339,6 @@ Rocket.prototype.onPlayerCollision = function() {
 	}
 	this.game.explode(this.x, this.y, this.damage);
 }
-
-
 
 function Exit(game, x, y) {
 	Entity.call(this, game);
@@ -2458,7 +2602,6 @@ Engine.wonGame = function() {
 }
 
 Engine.update = function() {
-	Engine.emit('update');
 	if (!Engine.isOver) {
 		Engine.game.update();
 	}
@@ -2468,7 +2611,6 @@ Engine.update = function() {
 Engine.doOverlay = false;
 
 Engine.render = function() {
-	Engine.emit('render');
 	var drawCtx = Engine.drawCanvas.getContext('2d');
 	drawCtx.imageSmoothingEnabled = false;
 	drawCtx.mozImageSmoothingEnabled = false;
